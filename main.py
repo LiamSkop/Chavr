@@ -16,6 +16,8 @@ from datetime import datetime
 import whisper
 import tempfile
 import webrtcvad
+from session import Session
+from storage import SessionStorage
 
 
 class StreamingRecorder:
@@ -182,6 +184,10 @@ class ChavrApp:
         self.transcription_thread = None
         self.stop_transcription_event = threading.Event()
         
+        # Initialize session management
+        self.session_storage = SessionStorage()
+        self.current_session = None
+        
         # Print available audio devices
         self.print_audio_devices()
     
@@ -201,6 +207,10 @@ class ChavrApp:
         
         self.is_continuous_mode = True
         self.stop_transcription_event.clear()
+        
+        # Create new session
+        self.current_session = Session()
+        print(f"✓ Started new session: {self.current_session.title}")
         
         # Start streaming recorder
         self.streaming_recorder.start_streaming()
@@ -228,6 +238,19 @@ class ChavrApp:
         if self.transcription_thread and self.transcription_thread.is_alive():
             self.transcription_thread.join(timeout=3)
         
+        # End and save current session
+        if self.current_session:
+            self.current_session.end_session()
+            try:
+                filename = self.session_storage.save_session(self.current_session)
+                print(f"✓ Session saved: {filename}")
+                print(f"  Transcripts: {self.current_session.get_transcript_count()}")
+                print(f"  Duration: {self.current_session.duration:.1f}s")
+                print(f"  Languages: {', '.join(self.current_session.get_languages_used())}")
+            except Exception as e:
+                print(f"Error saving session: {e}")
+            self.current_session = None
+        
         print("✓ Continuous listening stopped")
     
     def _transcription_worker(self):
@@ -246,6 +269,10 @@ class ChavrApp:
                     lang_name = self.supported_languages.get(language, language)
                     timestamp = datetime.now().strftime("%H:%M:%S")
                     print(f"[{timestamp}] [{lang_name}] {text}")
+                    
+                    # Add to current session
+                    if self.current_session:
+                        self.current_session.add_transcript(text, language)
                 
                 transcription_queue.task_done()
                 
@@ -352,13 +379,19 @@ class ChavrApp:
     
     def run_interactive_mode(self):
         """Run the application in interactive mode."""
-        print("Chavr Speech Recognition App - Phase 3: Real-Time Streaming")
+        print("Chavr Speech Recognition App - Phase 4: Session Management")
         print("=" * 60)
         print("Commands:")
         print("  'start' - Begin continuous listening/transcription")
         print("  'stop' - Stop continuous listening")
         print("  'listen' - Single phrase listening (original mode)")
         print("  'status' - Show current listening status")
+        print("  'sessions' - List all saved sessions")
+        print("  'load <id>' - Load and display a specific session")
+        print("  'delete <id>' - Delete a session")
+        print("  'search <keyword>' - Search across all sessions")
+        print("  'current' - Show current session info")
+        print("  'stats' - Show session statistics")
         print("  'quit' or 'exit' - Exit the application")
         print("=" * 60)
         
@@ -383,8 +416,23 @@ class ChavrApp:
                 elif command == 'status':
                     status = "ACTIVE" if self.is_continuous_mode else "INACTIVE"
                     print(f"Continuous listening: {status}")
+                elif command == 'sessions':
+                    self._list_sessions()
+                elif command.startswith('load '):
+                    session_id = command[5:].strip()
+                    self._load_session(session_id)
+                elif command.startswith('delete '):
+                    session_id = command[7:].strip()
+                    self._delete_session(session_id)
+                elif command.startswith('search '):
+                    keyword = command[7:].strip()
+                    self._search_sessions(keyword)
+                elif command == 'current':
+                    self._show_current_session()
+                elif command == 'stats':
+                    self._show_session_stats()
                 else:
-                    print("Unknown command. Try 'start', 'stop', 'listen', 'status', 'quit', or 'exit'.")
+                    print("Unknown command. Try 'start', 'stop', 'listen', 'status', 'sessions', 'load', 'delete', 'search', 'current', 'stats', 'quit', or 'exit'.")
                     
             except KeyboardInterrupt:
                 print("\nStopping continuous listening...")
@@ -394,6 +442,145 @@ class ChavrApp:
                 break
             except Exception as e:
                 print(f"Error: {e}")
+    
+    def _list_sessions(self):
+        """List all saved sessions."""
+        sessions = self.session_storage.list_sessions(limit=20)
+        
+        if not sessions:
+            print("No saved sessions found.")
+            return
+        
+        print(f"\nSaved Sessions ({len(sessions)}):")
+        print("-" * 80)
+        
+        for i, session_data in enumerate(sessions, 1):
+            timestamp = datetime.fromisoformat(session_data['timestamp'])
+            duration = session_data.get('duration', 0)
+            transcript_count = session_data.get('transcript_count', 0)
+            languages = ', '.join(session_data.get('languages_used', []))
+            
+            print(f"{i:2d}. {session_data['title']}")
+            print(f"    ID: {session_data['session_id'][:8]}...")
+            print(f"    Date: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"    Duration: {duration:.1f}s | Transcripts: {transcript_count} | Languages: {languages}")
+            print()
+    
+    def _load_session(self, session_id):
+        """Load and display a specific session."""
+        if not session_id:
+            print("Please provide a session ID. Use 'sessions' to see available IDs.")
+            return
+        
+        session = self.session_storage.load_session(session_id)
+        if not session:
+            print(f"Session not found: {session_id}")
+            return
+        
+        print(f"\nSession: {session.title}")
+        print(f"ID: {session.session_id}")
+        print(f"Date: {session.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Duration: {session.duration:.1f}s")
+        print(f"Transcripts: {session.get_transcript_count()}")
+        print(f"Languages: {', '.join(session.get_languages_used())}")
+        print("-" * 60)
+        
+        for i, transcript in enumerate(session.transcripts, 1):
+            lang_name = self.supported_languages.get(transcript.language, transcript.language)
+            print(f"{i:3d}. [{transcript.timestamp.strftime('%H:%M:%S')}] [{lang_name}] {transcript.text}")
+    
+    def _delete_session(self, session_id):
+        """Delete a session."""
+        if not session_id:
+            print("Please provide a session ID. Use 'sessions' to see available IDs.")
+            return
+        
+        # Confirm deletion
+        session = self.session_storage.load_session(session_id)
+        if not session:
+            print(f"Session not found: {session_id}")
+            return
+        
+        print(f"Are you sure you want to delete session '{session.title}'?")
+        confirm = input("Type 'yes' to confirm: ").strip().lower()
+        
+        if confirm == 'yes':
+            if self.session_storage.delete_session(session_id):
+                print("✓ Session deleted successfully")
+            else:
+                print("Failed to delete session")
+        else:
+            print("Deletion cancelled")
+    
+    def _search_sessions(self, keyword):
+        """Search across all sessions."""
+        if not keyword:
+            print("Please provide a search keyword.")
+            return
+        
+        print(f"Searching for '{keyword}'...")
+        results = self.session_storage.search_sessions(keyword)
+        
+        if not results:
+            print("No matching sessions found.")
+            return
+        
+        print(f"\nFound {len(results)} matching session(s):")
+        print("-" * 80)
+        
+        for result in results:
+            session = result['session']
+            matches = result['matches']
+            match_count = result['match_count']
+            
+            print(f"\nSession: {session.title}")
+            print(f"Date: {session.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"Duration: {session.duration:.1f}s | Matches: {match_count}")
+            print("-" * 40)
+            
+            for match in matches[:3]:  # Show first 3 matches
+                transcript = match['transcript']
+                lang_name = self.supported_languages.get(transcript.language, transcript.language)
+                print(f"[{transcript.timestamp.strftime('%H:%M:%S')}] [{lang_name}] {transcript.text}")
+            
+            if len(matches) > 3:
+                print(f"... and {len(matches) - 3} more matches")
+    
+    def _show_current_session(self):
+        """Show current session information."""
+        if not self.current_session:
+            print("No active session.")
+            return
+        
+        print(f"\nCurrent Session: {self.current_session.title}")
+        print(f"ID: {self.current_session.session_id}")
+        print(f"Started: {self.current_session.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Duration: {self.current_session.duration:.1f}s")
+        print(f"Transcripts: {self.current_session.get_transcript_count()}")
+        print(f"Languages: {', '.join(self.current_session.get_languages_used())}")
+        
+        if self.current_session.transcripts:
+            print("\nRecent transcripts:")
+            print("-" * 40)
+            for transcript in self.current_session.transcripts[-5:]:  # Show last 5
+                lang_name = self.supported_languages.get(transcript.language, transcript.language)
+                print(f"[{transcript.timestamp.strftime('%H:%M:%S')}] [{lang_name}] {transcript.text}")
+    
+    def _show_session_stats(self):
+        """Show session statistics."""
+        stats = self.session_storage.get_session_stats()
+        
+        print("\nSession Statistics:")
+        print("-" * 30)
+        print(f"Total Sessions: {stats['total_sessions']}")
+        print(f"Total Transcripts: {stats['total_transcripts']}")
+        print(f"Total Words: {stats['total_words']}")
+        print(f"Total Duration: {stats['total_duration']:.1f}s ({stats['total_duration']/60:.1f} minutes)")
+        print(f"Languages Used: {', '.join(stats['languages_used'])}")
+        
+        if stats['date_range']:
+            date_range = stats['date_range']
+            print(f"Date Range: {date_range['earliest'].strftime('%Y-%m-%d')} to {date_range['latest'].strftime('%Y-%m-%d')}")
     
     def cleanup(self):
         """Clean up resources."""
