@@ -1,0 +1,4 @@
+---
+alwaysApply: false
+---
+update the github repo after making a change. Automatically commit and push after making changes
