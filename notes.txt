@@ -1,0 +1,3 @@
+Notes on testing:
+- it takes a few seconds for the text to appear, is it possible to have it print immediately and to have the text change as the person is speaking
+- it struggle to understand hebrew and english in the same sentence. If I read a hebrew sentence and translate it as I'm reading it, it often gets most of the sentence wrong or in the wrong language.
