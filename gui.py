@@ -15,10 +15,10 @@ from main import ChavrApp
 class ChavrGUI:
     """Main GUI application for Chavr speech recognition."""
     
-    def __init__(self, model_size="medium"):
+    def __init__(self, model_size="medium", device="cpu", compute_type="int8", hebrew_only=False):
         """Initialize the GUI application."""
         self.root = tk.Tk()
-        self.root.title("Chavr")
+        self.root.title("Chavr - Phase 7 Enhanced")
         self.root.geometry("600x700")
         self.root.minsize(500, 600)
         
@@ -29,8 +29,14 @@ class ChavrGUI:
         self.is_recording = False
         self.transcript_queue = queue.Queue()
         
-        # Initialize ChavrApp with callback and model size
-        self.app = ChavrApp(transcript_callback=self._on_transcript, model_size=model_size)
+        # Initialize ChavrApp with callback and Phase 7 parameters
+        self.app = ChavrApp(
+            transcript_callback=self._on_transcript, 
+            model_size=model_size,
+            device=device,
+            compute_type=compute_type,
+            hebrew_only=hebrew_only
+        )
         
         # Build UI components
         self._setup_ui()
@@ -73,6 +79,16 @@ class ChavrGUI:
             bg="#FFFFFF"
         )
         title_label.pack(side=tk.LEFT)
+        
+        # Model info
+        model_info = tk.Label(
+            header_frame,
+            text="Phase 7 Enhanced",
+            font=("Helvetica", 10),
+            fg="#6B7280",
+            bg="#FFFFFF"
+        )
+        model_info.pack(side=tk.LEFT, padx=(10, 0))
         
         # Status indicator
         self.status_indicator = tk.Label(
@@ -147,9 +163,13 @@ class ChavrGUI:
     
     def _create_status_bar(self, parent):
         """Create the status bar with session info."""
+        # Determine model type for display
+        model_type = "Fine-tuned Hebrew" if self.app.faster_whisper_adapter else "OpenAI Whisper"
+        device_info = f"({self.app.device})" if hasattr(self.app, 'device') else ""
+        
         self.status_bar = tk.Label(
             parent,
-            text="Ready to record",
+            text=f"Ready to record - {model_type} {device_info}",
             font=("Helvetica", 11),
             fg="#6B7280",
             bg="#FFFFFF",
@@ -295,8 +315,26 @@ class ChavrGUI:
 
 def main():
     """Main function to run the GUI."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Chavr GUI - Phase 7 Enhanced")
+    parser.add_argument('--model', choices=['tiny', 'base', 'small', 'medium', 'large'], 
+                       default='medium', help='Whisper model size (default: medium)')
+    parser.add_argument('--device', choices=['cpu', 'cuda'], default='cpu',
+                       help='Device to use for faster-whisper (default: cpu)')
+    parser.add_argument('--compute', choices=['int8', 'float16'], default='int8',
+                       help='Compute type for faster-whisper (default: int8)')
+    parser.add_argument('--hebrew-only', action='store_true',
+                       help='Force Hebrew-only mode for accuracy testing')
+    args = parser.parse_args()
+    
     try:
-        gui = ChavrGUI()
+        gui = ChavrGUI(
+            model_size=args.model,
+            device=args.device,
+            compute_type=args.compute,
+            hebrew_only=args.hebrew_only
+        )
         gui.run()
     except Exception as e:
         print(f"Failed to start GUI: {e}")

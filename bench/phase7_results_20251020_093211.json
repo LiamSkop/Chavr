@@ -1,0 +1,42 @@
+{
+  "timestamp": "2025-10-20T09:32:11.138711",
+  "faster_whisper_available": true,
+  "tests": [
+    {
+      "test_name": "faster-whisper-cpu-int8",
+      "expected_text": "",
+      "actual_text": "",
+      "detected_language": "unknown",
+      "processing_time": 0.24127888679504395,
+      "audio_duration": 2.0,
+      "model_type": "faster-whisper"
+    },
+    {
+      "test_name": "faster-whisper-short",
+      "expected_text": "",
+      "actual_text": "",
+      "detected_language": "unknown",
+      "processing_time": 0.09624099731445312,
+      "audio_duration": 1.0,
+      "model_type": "faster-whisper"
+    },
+    {
+      "test_name": "openai-whisper-medium",
+      "expected_text": "",
+      "actual_text": "",
+      "detected_language": "unknown",
+      "processing_time": 0.09586095809936523,
+      "audio_duration": 2.0,
+      "model_type": "faster-whisper"
+    },
+    {
+      "test_name": "openai-whisper-short",
+      "expected_text": "",
+      "actual_text": "",
+      "detected_language": "unknown",
+      "processing_time": 0.10031986236572266,
+      "audio_duration": 1.0,
+      "model_type": "faster-whisper"
+    }
+  ]
+}

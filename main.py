@@ -10,7 +10,6 @@ import sys
 import os
 import wave
 import threading
-import time
 import queue
 from datetime import datetime
 import whisper
@@ -20,9 +19,179 @@ import warnings
 from session import Session
 from storage import SessionStorage
 
+# Phase 7: Enhanced Speech Recognition
+try:
+    from faster_whisper import WhisperModel
+    FASTER_WHISPER_AVAILABLE = True
+except ImportError:
+    FASTER_WHISPER_AVAILABLE = False
+    print("Warning: faster-whisper not available, falling back to openai-whisper")
+
+
+class FasterWhisperAdapter:
+    """Adapter for faster-whisper with fine-tuned Hebrew model."""
+    
+    def __init__(self, device="cpu", compute_type="int8", hebrew_only=False):
+        """
+        Initialize the faster-whisper adapter.
+        
+        Args:
+            device (str): Device to use ("cpu" or "cuda")
+            compute_type (str): Compute type ("int8" or "float16")
+            hebrew_only (bool): Force Hebrew-only mode
+        """
+        self.device = device
+        self.compute_type = compute_type
+        self.hebrew_only = hebrew_only
+        self.model = None
+        self.model_name = "ivrit-ai/whisper-large-v3-ct2"  # Fine-tuned Hebrew model
+        
+        # Post-processing filters (lean)
+        self.noise_threshold = 0.01  # RMS threshold for noise detection
+        self.hallucination_words = {"you", "yeah", "uh", "um", "ah"}
+        self.min_text_length = 3
+        
+        # Language mapping
+        self.language_mapping = {
+            'en': 'en', 'he': 'he', 'iw': 'he',  # Hebrew variants
+            'nl': 'en',  # Dutch → English fallback
+            'ko': 'en',  # Korean → English fallback
+            'unknown': 'en'  # Default to English
+        }
+    
+    def load_model(self):
+        """Load the faster-whisper model."""
+        if not FASTER_WHISPER_AVAILABLE:
+            raise ImportError("faster-whisper not available")
+        
+        try:
+            print(f"Loading faster-whisper model: {self.model_name}")
+            print(f"Device: {self.device}, Compute: {self.compute_type}")
+            
+            self.model = WhisperModel(
+                self.model_name,
+                device=self.device,
+                compute_type=self.compute_type
+            )
+            print("✓ Faster-whisper model loaded successfully")
+            
+        except Exception as e:
+            print(f"Error loading faster-whisper model: {e}")
+            raise
+    
+    def transcribe(self, audio_data_or_path, language=None):
+        """
+        Transcribe audio using faster-whisper.
+        
+        Args:
+            audio_data_or_path: Raw audio data (bytes) or file path
+            language: Language code (None for auto-detect)
+            
+        Returns:
+            tuple: (text, detected_language, segments, info) or (None, None, None, None) if failed
+        """
+        if self.model is None:
+            self.load_model()
+        
+        try:
+            # Determine if input is file path or raw data
+            if isinstance(audio_data_or_path, str):
+                audio_path = audio_data_or_path
+            else:
+                # Save raw audio data to temporary file
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+                    audio_path = temp_file.name
+                    with wave.open(audio_path, 'wb') as wf:
+                        wf.setnchannels(1)  # Mono
+                        wf.setsampwidth(2)  # 16-bit
+                        wf.setframerate(16000)  # 16kHz
+                        wf.writeframes(audio_data_or_path)
+            
+            # Set language for transcription - prioritize Hebrew for fine-tuned model
+            transcribe_language = language
+            if self.hebrew_only:
+                transcribe_language = "he"
+            elif transcribe_language is None:
+                # For ivrit-ai model, default to Hebrew for better accuracy
+                transcribe_language = "he"
+            
+            # Transcribe with faster-whisper using fine-tuned Hebrew model
+            segments, info = self.model.transcribe(
+                audio_path,
+                language=transcribe_language,
+                beam_size=5,
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 400},
+                # Additional parameters for better Hebrew transcription
+                word_timestamps=True,  # Enable word-level timestamps
+                condition_on_previous_text=True  # Use context for better mixed-language handling
+            )
+            
+            # Extract text from segments
+            text_parts = []
+            for segment in segments:
+                text_parts.append(segment.text.strip())
+            
+            text = " ".join(text_parts).strip()
+            
+            # Clean up temporary file if we created it
+            if not isinstance(audio_data_or_path, str):
+                os.unlink(audio_path)
+            
+            # Post-process the text
+            text = self._post_process_text(text, audio_data_or_path)
+            
+            # Map detected language
+            detected_language = info.language if hasattr(info, 'language') else "unknown"
+            mapped_language = self.language_mapping.get(detected_language, 'en')
+            
+            return text, mapped_language, segments, info
+            
+        except Exception as e:
+            print(f"Error during faster-whisper transcription: {e}")
+            # Clean up temporary file if we created it
+            if not isinstance(audio_data_or_path, str) and 'audio_path' in locals():
+                try:
+                    os.unlink(audio_path)
+                except:
+                    pass
+            return None, None, None, None
+    
+    def _post_process_text(self, text, audio_data):
+        """
+        Apply post-processing filters to reduce hallucinations.
+        
+        Args:
+            text (str): Raw transcribed text
+            audio_data: Original audio data for RMS calculation
+            
+        Returns:
+            str: Filtered text or None if filtered out
+        """
+        if not text:
+            return None
+        
+        # Calculate RMS for noise detection
+        if isinstance(audio_data, bytes):
+            audio_array = np.frombuffer(audio_data, dtype=np.int16)
+            rms = np.sqrt(np.mean(audio_array**2)) / 32768.0  # Normalize to 0-1
+        else:
+            rms = 0.1  # Default if we can't calculate
+        
+        # Filter 1: Drop very short text unless high SNR
+        if len(text) < self.min_text_length and rms < self.noise_threshold * 2:
+            return None
+        
+        # Filter 2: Suppress common hallucinations on near-silence
+        text_lower = text.lower().strip()
+        if rms < self.noise_threshold and text_lower in self.hallucination_words:
+            return None
+
+        return text
+
+
 
 class StreamingRecorder:
-    """Handles continuous audio streaming with voice activity detection."""
     
     def __init__(self, sample_rate=16000, frame_duration_ms=30, vad_aggressiveness=1):
         """
@@ -155,35 +324,60 @@ class StreamingRecorder:
 class ChavrApp:
     """Main application class for Chavr speech recognition."""
     
-    def __init__(self, transcript_callback=None, model_size="medium"):
+    def __init__(self, transcript_callback=None, model_size="medium", device="cpu", compute_type="int8", hebrew_only=False):
         """Initialize the Chavr application."""
         self.transcript_callback = transcript_callback
         self.model_size = model_size  # "tiny", "base", "small", "medium", "large"
+        self.device = device
+        self.compute_type = compute_type
+        self.hebrew_only = hebrew_only
         self.audio = pyaudio.PyAudio()
         
-        # Language support configuration
+        # Language support configuration (single source of truth)
         self.supported_languages = {
             'en': 'English',
-            'he': 'Hebrew', 
-            'iw': 'Hebrew (alternative)'
+            'he': 'Hebrew',
+            'iw': 'Hebrew'
         }
         
-        # Initialize Whisper model
-        try:
-            print("Loading Whisper model...")
-            # Try to load model with SSL verification disabled for corporate networks
-            import ssl
-            ssl._create_default_https_context = ssl._create_unverified_context
-            self.whisper_model = whisper.load_model(self.model_size)  # Configurable model size
-            print("✓ Whisper model loaded successfully")
-            
-            # Suppress FP16 warnings for CPU usage
-            warnings.filterwarnings("ignore", message="FP16 is not supported on CPU")
-            print("✓ FP16 warnings suppressed")
-        except Exception as e:
-            print(f"Error: Could not load Whisper model: {e}")
-            print("Please ensure openai-whisper is installed: pip3 install openai-whisper")
-            sys.exit(1)
+        # Initialize Speech Recognition Model (Phase 7: Enhanced)
+        self.whisper_model = None
+        self.faster_whisper_adapter = None
+        
+        # Try faster-whisper first (Phase 7)
+        if FASTER_WHISPER_AVAILABLE:
+            try:
+                print("Phase 7: Initializing faster-whisper with optimized model...")
+                self.faster_whisper_adapter = FasterWhisperAdapter(
+                    device=self.device,
+                    compute_type=self.compute_type,
+                    hebrew_only=self.hebrew_only
+                )
+                # Test the adapter by loading the model
+                self.faster_whisper_adapter.load_model()
+                print("✓ Faster-whisper adapter initialized and tested")
+            except Exception as e:
+                print(f"Warning: Could not initialize faster-whisper: {e}")
+                print("Falling back to openai-whisper...")
+                self.faster_whisper_adapter = None
+        
+        # Fallback to openai-whisper if faster-whisper fails
+        if self.faster_whisper_adapter is None:
+            try:
+                print("Loading openai-whisper model...")
+                # Try to load model with SSL verification disabled for corporate networks
+                import ssl
+                ssl._create_default_https_context = ssl._create_unverified_context
+                self.whisper_model = whisper.load_model(self.model_size)
+                print("✓ OpenAI Whisper model loaded successfully")
+                
+                # Suppress FP16 warnings for CPU usage
+                warnings.filterwarnings("ignore", message="FP16 is not supported on CPU")
+                print("✓ FP16 warnings suppressed")
+            except Exception as e:
+                print(f"Error: Could not load any Whisper model: {e}")
+                print("Please ensure openai-whisper is installed: pip3 install openai-whisper")
+                sys.exit(1)
         
         # Initialize streaming recorder
         self.streaming_recorder = StreamingRecorder()
@@ -195,16 +389,15 @@ class ChavrApp:
         self.session_storage = SessionStorage()
         self.current_session = None
         
-        # Print available audio devices
-        self.print_audio_devices()
-    
-    def print_audio_devices(self):
-        """Print available audio input devices."""
-        print("Available audio input devices:")
-        for i in range(self.audio.get_device_count()):
-            info = self.audio.get_device_info_by_index(i)
-            if info['maxInputChannels'] > 0:
-                print(f"  {i}: {info['name']}")
+        # Optionally print available audio devices once (lean runtime)
+        try:
+            print("Available audio input devices:")
+            for i in range(self.audio.get_device_count()):
+                info = self.audio.get_device_info_by_index(i)
+                if info['maxInputChannels'] > 0:
+                    print(f"  {i}: {info['name']}")
+        except Exception:
+            pass
     
     def start_continuous_listening(self):
         """Start continuous listening mode."""
@@ -297,7 +490,7 @@ class ChavrApp:
     
     def _transcribe_audio_data(self, audio_data):
         """
-        Transcribe audio data using Whisper.
+        Transcribe audio data using faster-whisper or fallback to openai-whisper.
         
         Args:
             audio_data (bytes): Raw audio data
@@ -306,126 +499,65 @@ class ChavrApp:
             tuple: (recognized_text, detected_language) or (None, None) if failed
         """
         try:
-            # Save audio to temporary file
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
-                temp_filename = temp_file.name
-                with wave.open(temp_filename, 'wb') as wf:
-                    wf.setnchannels(1)  # Mono
-                    wf.setsampwidth(self.audio.get_sample_size(pyaudio.paInt16))
-                    wf.setframerate(16000)  # 16kHz
-                    wf.writeframes(audio_data)
+            # Phase 7: Use faster-whisper adapter if available
+            if self.faster_whisper_adapter:
+                text, language, segments, info = self.faster_whisper_adapter.transcribe(audio_data)
+                return text, language
             
-            # Multilingual prompt to help with code-switching
-            multilingual_prompt = (
-                "This is a conversation that may contain both Hebrew and English. "
-                "Some sentences mix both languages. "
-                "שלום hello מה שלומך how are you תודה thank you"
-            )
+            # Fallback to openai-whisper
+            if self.whisper_model:
+                # Save audio to temporary file
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+                    temp_filename = temp_file.name
+                    with wave.open(temp_filename, 'wb') as wf:
+                        wf.setnchannels(1)  # Mono
+                        wf.setsampwidth(self.audio.get_sample_size(pyaudio.paInt16))
+                        wf.setframerate(16000)  # 16kHz
+                        wf.writeframes(audio_data)
+                
+                # Multilingual prompt to help with code-switching
+                multilingual_prompt = (
+                    "This is a conversation that may contain both Hebrew and English. "
+                    "Some sentences mix both languages. "
+                    "שלום hello מה שלומך how are you תודה thank you"
+                )
+                
+                # Transcribe with Whisper - optimized for mixed-language support
+                result = self.whisper_model.transcribe(
+                    temp_filename,
+                    language=None,  # Auto-detect
+                    initial_prompt=multilingual_prompt,  # Guide for mixed languages
+                    condition_on_previous_text=True,  # Use context for better mixed-language handling
+                    word_timestamps=False  # Faster processing
+                )
+                
+                # Clean up temporary file
+                os.unlink(temp_filename)
+                
+                # Extract text and language
+                text = result["text"].strip()
+                detected_language = result.get("language", "unknown")
+                
+                # Normalize language code to our supported set
+                normalized = 'he' if detected_language in ('he', 'iw') else 'en'
+                return text, normalized if text else None
             
-            # Transcribe with Whisper - optimized for mixed-language support
-            result = self.whisper_model.transcribe(
-                temp_filename,
-                language=None,  # Auto-detect
-                initial_prompt=multilingual_prompt,  # Guide for mixed languages
-                condition_on_previous_text=True,  # Use context for better mixed-language handling
-                word_timestamps=False  # Faster processing
-            )
-            
-            # Clean up temporary file
-            os.unlink(temp_filename)
-            
-            # Extract text and language
-            text = result["text"].strip()
-            detected_language = result.get("language", "unknown")
-            
-            # Map detected languages to supported set (English/Hebrew only)
-            language_mapping = {
-                'en': 'en', 'he': 'he', 'iw': 'he',  # Hebrew variants
-                'nl': 'en',  # Dutch → English fallback
-                'ko': 'en',  # Korean → English fallback
-                'unknown': 'en'  # Default to English
-            }
-            detected_language = language_mapping.get(detected_language, 'en')
-            
-            return text, detected_language if text else None
+            return None, None
                 
         except Exception as e:
             print(f"Error during transcription: {e}")
             return None, None
     
-    def listen(self, timeout=5, phrase_time_limit=5):
-        """
-        Listen for speech using Whisper with PyAudio recording (single phrase mode).
-        
-        Args:
-            timeout (int): Maximum time to wait for speech to start
-            phrase_time_limit (int): Maximum time to record a phrase
-            
-        Returns:
-            tuple: (recognized_text, detected_language) or (None, None) if failed
-        """
-        try:
-            print("Listening for speech...")
-            
-            # Audio parameters
-            sample_rate = 16000  # Whisper works best with 16kHz
-            channels = 1
-            chunk_size = 1024
-            format = pyaudio.paInt16
-            
-            # Open audio stream
-            stream = self.audio.open(
-                format=format,
-                channels=channels,
-                rate=sample_rate,
-                input=True,
-                frames_per_buffer=chunk_size
-            )
-            
-            print("Speak now...")
-            frames = []
-            
-            # Record audio
-            for _ in range(0, int(sample_rate / chunk_size * phrase_time_limit)):
-                data = stream.read(chunk_size, exception_on_overflow=False)
-                frames.append(data)
-            
-            stream.stop_stream()
-            stream.close()
-            
-            print("Processing speech with Whisper...")
-            
-            # Convert frames to audio data
-            audio_data = b''.join(frames)
-            text, language = self._transcribe_audio_data(audio_data)
-            
-            if text:
-                lang_name = self.supported_languages.get(language, language)
-                print(f"[{lang_name}] {text}")
-                return text, language
-            else:
-                print("No speech recognized")
-                return None, None
-                
-        except Exception as e:
-            print(f"Error during speech recognition: {e}")
-            return None, None
+    # Removed single-phrase listen mode to keep code lean (continuous mode covers core use case)
     
     def run_interactive_mode(self):
         """Run the application in interactive mode."""
-        print("Chavr Speech Recognition App - Phase 4: Session Management")
+        print("Chavr Speech Recognition App - Lean CLI")
         print("=" * 60)
         print("Commands:")
         print("  'start' - Begin continuous listening/transcription")
         print("  'stop' - Stop continuous listening")
-        print("  'listen' - Single phrase listening (original mode)")
-        print("  'status' - Show current listening status")
-        print("  'sessions' - List all saved sessions")
-        print("  'load <id>' - Load and display a specific session")
-        print("  'delete <id>' - Delete a session")
-        print("  'search <keyword>' - Search across all sessions")
-        print("  'current' - Show current session info")
-        print("  'stats' - Show session statistics")
+        print("  'sessions' - List saved sessions")
         print("  'quit' or 'exit' - Exit the application")
         print("=" * 60)
         
@@ -443,30 +575,10 @@ class ChavrApp:
                     self.start_continuous_listening()
                 elif command == 'stop':
                     self.stop_continuous_listening()
-                elif command == 'listen':
-                    text, language = self.listen()
-                    if not text:
-                        print("No speech recognized.")
-                elif command == 'status':
-                    status = "ACTIVE" if self.is_continuous_mode else "INACTIVE"
-                    print(f"Continuous listening: {status}")
                 elif command == 'sessions':
                     self._list_sessions()
-                elif command.startswith('load '):
-                    session_id = command[5:].strip()
-                    self._load_session(session_id)
-                elif command.startswith('delete '):
-                    session_id = command[7:].strip()
-                    self._delete_session(session_id)
-                elif command.startswith('search '):
-                    keyword = command[7:].strip()
-                    self._search_sessions(keyword)
-                elif command == 'current':
-                    self._show_current_session()
-                elif command == 'stats':
-                    self._show_session_stats()
                 else:
-                    print("Unknown command. Try 'start', 'stop', 'listen', 'status', 'sessions', 'load', 'delete', 'search', 'current', 'stats', 'quit', or 'exit'.")
+                    print("Unknown command. Try 'start', 'stop', 'sessions', 'quit', or 'exit'.")
                     
             except KeyboardInterrupt:
                 print("\nStopping continuous listening...")
@@ -500,137 +612,7 @@ class ChavrApp:
             print(f"    Duration: {duration:.1f}s | Transcripts: {transcript_count} | Languages: {languages}")
             print()
     
-    def _load_session(self, session_id):
-        """Load and display a specific session."""
-        if not session_id:
-            print("Please provide a session ID. Use 'sessions' to see available IDs.")
-            return
-        
-        session = self.session_storage.load_session(session_id)
-        if not session:
-            print(f"Session not found: {session_id}")
-            return
-        
-        print(f"\nSession: {session.title}")
-        print(f"ID: {session.session_id}")
-        print(f"Date: {session.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Duration: {session.duration:.1f}s")
-        print(f"Transcripts: {session.get_transcript_count()}")
-        print(f"Languages: {', '.join(session.get_languages_used())}")
-        print("-" * 60)
-        
-        for i, transcript in enumerate(session.transcripts, 1):
-            lang_name = self.supported_languages.get(transcript.language, transcript.language)
-            print(f"{i:3d}. [{transcript.timestamp.strftime('%H:%M:%S')}] [{lang_name}] {transcript.text}")
-    
-    def _delete_session(self, session_id):
-        """Delete a session."""
-        if not session_id:
-            print("Please provide a session ID. Use 'sessions' to see available IDs.")
-            return
-        
-        # Confirm deletion
-        session = self.session_storage.load_session(session_id)
-        if not session:
-            print(f"Session not found: {session_id}")
-            return
-        
-        print(f"Are you sure you want to delete session '{session.title}'?")
-        confirm = input("Type 'yes' to confirm: ").strip().lower()
-        
-        if confirm == 'yes':
-            if self.session_storage.delete_session(session_id):
-                print("✓ Session deleted successfully")
-            else:
-                print("Failed to delete session")
-        else:
-            print("Deletion cancelled")
-    
-    def _search_sessions(self, keyword):
-        """Search across all sessions."""
-        if not keyword:
-            print("Please provide a search keyword.")
-            return
-        
-        print(f"Searching for '{keyword}'...")
-        results = self.session_storage.search_sessions(keyword)
-        
-        if not results:
-            print("No matching sessions found.")
-            return
-        
-        print(f"\nFound {len(results)} matching session(s):")
-        print("-" * 80)
-        
-        for result in results:
-            session = result['session']
-            matches = result['matches']
-            match_count = result['match_count']
-            
-            print(f"\nSession: {session.title}")
-            print(f"Date: {session.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"Duration: {session.duration:.1f}s | Matches: {match_count}")
-            print("-" * 40)
-            
-            for match in matches[:3]:  # Show first 3 matches
-                transcript = match['transcript']
-                lang_name = self.supported_languages.get(transcript.language, transcript.language)
-                print(f"[{transcript.timestamp.strftime('%H:%M:%S')}] [{lang_name}] {transcript.text}")
-            
-            if len(matches) > 3:
-                print(f"... and {len(matches) - 3} more matches")
-    
-    def _show_current_session(self):
-        """Show current session information."""
-        if not self.current_session:
-            print("No active session.")
-            return
-        
-        print(f"\nCurrent Session: {self.current_session.title}")
-        print(f"ID: {self.current_session.session_id}")
-        print(f"Started: {self.current_session.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Duration: {self.current_session.duration:.1f}s")
-        print(f"Transcripts: {self.current_session.get_transcript_count()}")
-        print(f"Languages: {', '.join(self.current_session.get_languages_used())}")
-        
-        if self.current_session.transcripts:
-            print("\nRecent transcripts:")
-            print("-" * 40)
-            for transcript in self.current_session.transcripts[-5:]:  # Show last 5
-                lang_name = self.supported_languages.get(transcript.language, transcript.language)
-                print(f"[{transcript.timestamp.strftime('%H:%M:%S')}] [{lang_name}] {transcript.text}")
-    
-    def _show_session_stats(self):
-        """Show session statistics."""
-        stats = self.session_storage.get_session_stats()
-        
-        print("\nSession Statistics:")
-        print("-" * 30)
-        print(f"Total Sessions: {stats['total_sessions']}")
-        print(f"Total Transcripts: {stats['total_transcripts']}")
-        print(f"Total Words: {stats['total_words']}")
-        print(f"Total Duration: {stats['total_duration']:.1f}s ({stats['total_duration']/60:.1f} minutes)")
-        print(f"Languages Used: {', '.join(stats['languages_used'])}")
-        
-        if stats['date_range']:
-            date_range = stats['date_range']
-            print(f"Date Range: {date_range['earliest'].strftime('%Y-%m-%d')} to {date_range['latest'].strftime('%Y-%m-%d')}")
-    
-    def configure_performance(self, speed_priority=True):
-        """
-        Configure performance settings.
-        
-        Args:
-            speed_priority (bool): If True, optimize for speed. If False, optimize for accuracy.
-        """
-        if speed_priority:
-            # Fast settings - already optimized in __init__
-            print("✓ Performance mode: Speed optimized")
-        else:
-            # Accurate settings - revert to slower but more accurate
-            self.streaming_recorder.max_silence_frames = int(1.0 * 16000 / self.streaming_recorder.frame_size)
-            self.streaming_recorder.min_speech_frames = int(0.4 * 16000 / self.streaming_recorder.frame_size)
-            print("✓ Performance mode: Accuracy optimized")
+    # Removed CLI session operations and performance toggles to keep code lean
     
     def cleanup(self):
         """Clean up resources."""
@@ -650,30 +632,47 @@ def main():
     """Main function to run the Chavr application."""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Chavr Speech Recognition App")
+    parser = argparse.ArgumentParser(description="Chavr Speech Recognition App - Phase 7 Enhanced")
     parser.add_argument('--gui', action='store_true', help='Launch GUI mode')
     parser.add_argument('--model', choices=['tiny', 'base', 'small', 'medium', 'large'], 
                        default='medium', help='Whisper model size (default: medium)')
+    # Phase 7: Enhanced Speech Recognition arguments
+    parser.add_argument('--device', choices=['cpu', 'cuda'], default='cpu',
+                       help='Device to use for faster-whisper (default: cpu)')
+    parser.add_argument('--compute', choices=['int8', 'float16'], default='int8',
+                       help='Compute type for faster-whisper (default: int8)')
+    parser.add_argument('--hebrew-only', action='store_true',
+                       help='Force Hebrew-only mode for accuracy testing')
     args = parser.parse_args()
     
     if args.gui:
         try:
             from gui import ChavrGUI
-            gui = ChavrGUI(model_size=args.model)
+            gui = ChavrGUI(
+                model_size=args.model,
+                device=args.device,
+                compute_type=args.compute,
+                hebrew_only=args.hebrew_only
+            )
             gui.run()
         except Exception as e:
             print(f"Failed to start GUI: {e}")
             sys.exit(1)
     else:
-        # Existing CLI mode
+        app = None
         try:
-            app = ChavrApp(model_size=args.model)
+            app = ChavrApp(
+                model_size=args.model,
+                device=args.device,
+                compute_type=args.compute,
+                hebrew_only=args.hebrew_only
+            )
             app.run_interactive_mode()
         except Exception as e:
             print(f"Failed to initialize Chavr: {e}")
             sys.exit(1)
         finally:
-            if 'app' in locals():
+            if app:
                 app.cleanup()
 
 
