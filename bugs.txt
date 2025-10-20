@@ -1,9 +1,0 @@
-Testing the smart command:
-    - When I speak english it transcribes to english, however it labels as hebrew:
-        - example: "Enter command: smart
-                    Listening for speech (auto-detecting language)...
-                    Processing speech...
-                    [Hebrew] what's the deal w"
-
-    - When I speak in hebrew with an american accent, it doesn't understand what I'm saying and it's not so good at switching between english and hebrew 
-    - When I speak quickly it misses a lot of words

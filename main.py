@@ -16,6 +16,7 @@ from datetime import datetime
 import whisper
 import tempfile
 import webrtcvad
+import warnings
 from session import Session
 from storage import SessionStorage
 
@@ -23,7 +24,7 @@ from storage import SessionStorage
 class StreamingRecorder:
     """Handles continuous audio streaming with voice activity detection."""
     
-    def __init__(self, sample_rate=16000, frame_duration_ms=30, vad_aggressiveness=2):
+    def __init__(self, sample_rate=16000, frame_duration_ms=30, vad_aggressiveness=1):
         """
         Initialize the streaming recorder.
         
@@ -55,11 +56,11 @@ class StreamingRecorder:
         self.transcription_thread = None
         self.stop_event = threading.Event()
         
-        # Audio buffer for accumulating speech
+        # Audio buffer for accumulating speech - optimized for faster response
         self.speech_buffer = []
         self.silence_frames = 0
-        self.min_speech_frames = int(0.3 * sample_rate / self.frame_size)  # 0.3 seconds
-        self.max_silence_frames = int(1.0 * sample_rate / self.frame_size)  # 1 second
+        self.min_speech_frames = int(0.2 * sample_rate / self.frame_size)  # 0.2 seconds - faster trigger
+        self.max_silence_frames = int(0.5 * sample_rate / self.frame_size)  # 0.5 seconds - quicker response
         
         # PyAudio
         self.audio = pyaudio.PyAudio()
@@ -154,8 +155,10 @@ class StreamingRecorder:
 class ChavrApp:
     """Main application class for Chavr speech recognition."""
     
-    def __init__(self):
+    def __init__(self, transcript_callback=None, model_size="medium"):
         """Initialize the Chavr application."""
+        self.transcript_callback = transcript_callback
+        self.model_size = model_size  # "tiny", "base", "small", "medium", "large"
         self.audio = pyaudio.PyAudio()
         
         # Language support configuration
@@ -171,8 +174,12 @@ class ChavrApp:
             # Try to load model with SSL verification disabled for corporate networks
             import ssl
             ssl._create_default_https_context = ssl._create_unverified_context
-            self.whisper_model = whisper.load_model("medium")  # Balanced speed/accuracy
+            self.whisper_model = whisper.load_model(self.model_size)  # Configurable model size
             print("✓ Whisper model loaded successfully")
+            
+            # Suppress FP16 warnings for CPU usage
+            warnings.filterwarnings("ignore", message="FP16 is not supported on CPU")
+            print("✓ FP16 warnings suppressed")
         except Exception as e:
             print(f"Error: Could not load Whisper model: {e}")
             print("Please ensure openai-whisper is installed: pip3 install openai-whisper")
@@ -267,12 +274,17 @@ class ChavrApp:
                 
                 if text:
                     lang_name = self.supported_languages.get(language, language)
-                    timestamp = datetime.now().strftime("%H:%M:%S")
-                    print(f"[{timestamp}] [{lang_name}] {text}")
+                    timestamp = datetime.now()
+                    timestamp_str = timestamp.strftime("%H:%M:%S")
+                    print(f"[{timestamp_str}] [{lang_name}] {text}")
                     
                     # Add to current session
                     if self.current_session:
                         self.current_session.add_transcript(text, language)
+                    
+                    # Call GUI callback if available
+                    if self.transcript_callback:
+                        self.transcript_callback(text, language, timestamp)
                 
                 transcription_queue.task_done()
                 
@@ -303,8 +315,21 @@ class ChavrApp:
                     wf.setframerate(16000)  # 16kHz
                     wf.writeframes(audio_data)
             
-            # Transcribe with Whisper
-            result = self.whisper_model.transcribe(temp_filename)
+            # Multilingual prompt to help with code-switching
+            multilingual_prompt = (
+                "This is a conversation that may contain both Hebrew and English. "
+                "Some sentences mix both languages. "
+                "שלום hello מה שלומך how are you תודה thank you"
+            )
+            
+            # Transcribe with Whisper - optimized for mixed-language support
+            result = self.whisper_model.transcribe(
+                temp_filename,
+                language=None,  # Auto-detect
+                initial_prompt=multilingual_prompt,  # Guide for mixed languages
+                condition_on_previous_text=True,  # Use context for better mixed-language handling
+                word_timestamps=False  # Faster processing
+            )
             
             # Clean up temporary file
             os.unlink(temp_filename)
@@ -312,6 +337,15 @@ class ChavrApp:
             # Extract text and language
             text = result["text"].strip()
             detected_language = result.get("language", "unknown")
+            
+            # Map detected languages to supported set (English/Hebrew only)
+            language_mapping = {
+                'en': 'en', 'he': 'he', 'iw': 'he',  # Hebrew variants
+                'nl': 'en',  # Dutch → English fallback
+                'ko': 'en',  # Korean → English fallback
+                'unknown': 'en'  # Default to English
+            }
+            detected_language = language_mapping.get(detected_language, 'en')
             
             return text, detected_language if text else None
                 
@@ -582,6 +616,22 @@ class ChavrApp:
             date_range = stats['date_range']
             print(f"Date Range: {date_range['earliest'].strftime('%Y-%m-%d')} to {date_range['latest'].strftime('%Y-%m-%d')}")
     
+    def configure_performance(self, speed_priority=True):
+        """
+        Configure performance settings.
+        
+        Args:
+            speed_priority (bool): If True, optimize for speed. If False, optimize for accuracy.
+        """
+        if speed_priority:
+            # Fast settings - already optimized in __init__
+            print("✓ Performance mode: Speed optimized")
+        else:
+            # Accurate settings - revert to slower but more accurate
+            self.streaming_recorder.max_silence_frames = int(1.0 * 16000 / self.streaming_recorder.frame_size)
+            self.streaming_recorder.min_speech_frames = int(0.4 * 16000 / self.streaming_recorder.frame_size)
+            print("✓ Performance mode: Accuracy optimized")
+    
     def cleanup(self):
         """Clean up resources."""
         # Stop continuous listening if active
@@ -598,15 +648,33 @@ class ChavrApp:
 
 def main():
     """Main function to run the Chavr application."""
-    try:
-        app = ChavrApp()
-        app.run_interactive_mode()
-    except Exception as e:
-        print(f"Failed to initialize Chavr: {e}")
-        sys.exit(1)
-    finally:
-        if 'app' in locals():
-            app.cleanup()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Chavr Speech Recognition App")
+    parser.add_argument('--gui', action='store_true', help='Launch GUI mode')
+    parser.add_argument('--model', choices=['tiny', 'base', 'small', 'medium', 'large'], 
+                       default='medium', help='Whisper model size (default: medium)')
+    args = parser.parse_args()
+    
+    if args.gui:
+        try:
+            from gui import ChavrGUI
+            gui = ChavrGUI(model_size=args.model)
+            gui.run()
+        except Exception as e:
+            print(f"Failed to start GUI: {e}")
+            sys.exit(1)
+    else:
+        # Existing CLI mode
+        try:
+            app = ChavrApp(model_size=args.model)
+            app.run_interactive_mode()
+        except Exception as e:
+            print(f"Failed to initialize Chavr: {e}")
+            sys.exit(1)
+        finally:
+            if 'app' in locals():
+                app.cleanup()
 
 
 if __name__ == "__main__":
