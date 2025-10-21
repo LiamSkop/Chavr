@@ -58,6 +58,9 @@ class Session:
         self.transcripts: List[TranscriptEntry] = []
         self.title = title or self._generate_title()
         self.end_time: Optional[datetime] = None
+        
+        # Phase 8: Sefaria text integration
+        self.sefaria_text: Optional[Dict[str, Any]] = None
     
     def _generate_title(self) -> str:
         """Generate an automatic title based on timestamp."""
@@ -128,6 +131,38 @@ class Session:
         
         return matches
     
+    def set_sefaria_text(self, reference: str, language: str) -> None:
+        """
+        Set the Sefaria text reference for this session.
+        
+        Args:
+            reference (str): Text reference (e.g., "Genesis 1:1")
+            language (str): Language code ('en' or 'he')
+        """
+        self.sefaria_text = {
+            'reference': reference,
+            'language': language,
+            'loaded_at': datetime.now().isoformat()
+        }
+    
+    def get_sefaria_text_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Get Sefaria text information for this session.
+        
+        Returns:
+            dict: Sefaria text info or None if not set
+        """
+        return self.sefaria_text
+    
+    def has_sefaria_text(self) -> bool:
+        """
+        Check if this session has Sefaria text associated.
+        
+        Returns:
+            bool: True if Sefaria text is set
+        """
+        return self.sefaria_text is not None
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -139,7 +174,8 @@ class Session:
             'transcript_count': self.get_transcript_count(),
             'total_words': self.get_total_words(),
             'languages_used': self.get_languages_used(),
-            'transcripts': [t.to_dict() for t in self.transcripts]
+            'transcripts': [t.to_dict() for t in self.transcripts],
+            'sefaria_text': self.sefaria_text  # Phase 8: Include Sefaria text metadata
         }
     
     @classmethod
@@ -157,6 +193,9 @@ class Session:
         session.transcripts = [
             TranscriptEntry.from_dict(t) for t in data.get('transcripts', [])
         ]
+        
+        # Phase 8: Load Sefaria text metadata (backward compatible)
+        session.sefaria_text = data.get('sefaria_text', None)
         
         return session
     

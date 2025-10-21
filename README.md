@@ -1,17 +1,23 @@
 # Chavr
 
-A Python speech recognition and audio processing application built with PyAudio, Whisper, and NumPy. **Phase 7 Enhanced** with fine-tuned Hebrew speech recognition.
+A Python speech recognition and audio processing application built with PyAudio, Whisper, and NumPy. **Phase 8 Enhanced** with Sefaria text integration and intelligent autocomplete.
 
 ## Features
 
+- **Phase 8 Enhanced**: Sefaria text integration with intelligent autocomplete
 - **Phase 7 Enhanced**: Fine-tuned Hebrew Whisper model (`ivrit-ai/whisper-large-v3-ct2`)
 - Real-time speech recognition using OpenAI Whisper (faster-whisper optimized)
 - Multi-language support (Hebrew/English) with automatic language detection
+- **NEW**: Sefaria API integration for Jewish text fetching
+- **NEW**: Intelligent autocomplete with 120+ Jewish texts (Tanakh, Mishnah, Halachic works, etc.)
+- **NEW**: Text context management with session integration
+- **NEW**: Language toggle (EN/HE) for text display
+- **NEW**: Local text caching for offline access
 - Continuous audio streaming with Voice Activity Detection (VAD)
 - Session management and transcript storage
 - Post-processing filters to reduce hallucinations (e.g., repeated "you")
 - Audio device detection and selection
-- Interactive command-line interface
+- Interactive GUI interface with Tkinter
 - Cross-platform support (macOS, Linux, Windows)
 
 ## Requirements
@@ -59,16 +65,26 @@ pip install -r requirements.txt
 
 On first run, the fine-tuned Hebrew Whisper model (`ivrit-ai/whisper-large-v3-ct2`, ~1.5-2.5GB) will be automatically downloaded and cached. This may take a few minutes depending on your internet connection.
 
+### Phase 8 Sefaria Integration
+
+The application now includes Sefaria API integration for fetching Jewish texts. Text references are cached locally in the `sefaria_cache/` directory for offline access.
+
 ## Usage
 
 ### Running the Application
 
-Activate the virtual environment and run the main application:
+Activate the virtual environment and run the GUI application:
 
 ```bash
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-python main.py
+python gui.py
 ```
+
+The GUI provides an intuitive interface for:
+- Loading Jewish texts from Sefaria with autocomplete
+- Recording and transcribing speech in Hebrew/English
+- Managing study sessions with text context
+- Switching between English and Hebrew text display
 
 ### Phase 7 CLI Options
 
