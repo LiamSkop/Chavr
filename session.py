@@ -58,6 +58,13 @@ class Session:
         self.transcripts: List[TranscriptEntry] = []
         self.title = title or self._generate_title()
         self.end_time: Optional[datetime] = None
+        
+        # Phase 8: Sefaria text integration
+        self.sefaria_text: Optional[Dict[str, Any]] = None
+        
+        # Phase 9: AI integration
+        self.ai_summary: Optional[str] = None
+        self.ai_interactions: List[Dict[str, Any]] = []
     
     def _generate_title(self) -> str:
         """Generate an automatic title based on timestamp."""
@@ -128,6 +135,71 @@ class Session:
         
         return matches
     
+    def set_sefaria_text(self, reference: str, language: str) -> None:
+        """
+        Set the Sefaria text reference for this session.
+        
+        Args:
+            reference (str): Text reference (e.g., "Genesis 1:1")
+            language (str): Language code ('en' or 'he')
+        """
+        self.sefaria_text = {
+            'reference': reference,
+            'language': language,
+            'loaded_at': datetime.now().isoformat()
+        }
+    
+    def get_sefaria_text_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Get Sefaria text information for this session.
+        
+        Returns:
+            dict: Sefaria text info or None if not set
+        """
+        return self.sefaria_text
+    
+    def has_sefaria_text(self) -> bool:
+        """
+        Check if this session has Sefaria text associated.
+        
+        Returns:
+            bool: True if Sefaria text is set
+        """
+        return self.sefaria_text is not None
+    
+    def add_ai_interaction(self, question: str, response: str, timestamp: Optional[datetime] = None):
+        """
+        Add an AI Q&A interaction to the session.
+        
+        Args:
+            question (str): The user's question
+            response (str): The AI's response
+            timestamp (datetime, optional): When the interaction occurred
+        """
+        interaction = {
+            'question': question,
+            'response': response,
+            'timestamp': (timestamp or datetime.now()).isoformat()
+        }
+        self.ai_interactions.append(interaction)
+    
+    def set_ai_summary(self, summary: str):
+        """
+        Set the AI-generated session summary.
+        
+        Args:
+            summary (str): The session summary
+        """
+        self.ai_summary = summary
+    
+    def get_ai_interaction_count(self) -> int:
+        """Get the number of AI interactions."""
+        return len(self.ai_interactions)
+    
+    def has_ai_summary(self) -> bool:
+        """Check if session has an AI summary."""
+        return self.ai_summary is not None
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -139,7 +211,11 @@ class Session:
             'transcript_count': self.get_transcript_count(),
             'total_words': self.get_total_words(),
             'languages_used': self.get_languages_used(),
-            'transcripts': [t.to_dict() for t in self.transcripts]
+            'transcripts': [t.to_dict() for t in self.transcripts],
+            'sefaria_text': self.sefaria_text,  # Phase 8: Include Sefaria text metadata
+            'ai_summary': self.ai_summary,  # Phase 9: Include AI summary
+            'ai_interactions': self.ai_interactions,  # Phase 9: Include AI Q&A
+            'ai_interaction_count': self.get_ai_interaction_count()  # Phase 9: Interaction count
         }
     
     @classmethod
@@ -157,6 +233,13 @@ class Session:
         session.transcripts = [
             TranscriptEntry.from_dict(t) for t in data.get('transcripts', [])
         ]
+        
+        # Phase 8: Load Sefaria text metadata (backward compatible)
+        session.sefaria_text = data.get('sefaria_text', None)
+        
+        # Phase 9: Load AI data (backward compatible)
+        session.ai_summary = data.get('ai_summary', None)
+        session.ai_interactions = data.get('ai_interactions', [])
         
         return session
     

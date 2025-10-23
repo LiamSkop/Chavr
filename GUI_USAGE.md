@@ -1,17 +1,17 @@
-# Chavr GUI Usage Guide
+# Chavr GUI Usage Guide - Phase 8 Enhanced
 
 ## Quick Start
 
-### Launch GUI Mode
+### Launch GUI Mode (Recommended)
 ```bash
 # Activate virtual environment
 source venv/bin/activate
 
-# Launch GUI
-python main.py --gui
+# Launch GUI with Sefaria integration
+python gui.py
 ```
 
-### Launch CLI Mode (Original)
+### Launch CLI Mode (Legacy)
 ```bash
 # Activate virtual environment
 source venv/bin/activate
@@ -20,31 +20,47 @@ source venv/bin/activate
 python main.py
 ```
 
-## GUI Features
+## GUI Features - Phase 8 Enhanced
 
-### Main Interface
-- **Large Record Button**: Click to start/stop recording
+### Text Input Section
+- **Text Reference Field**: Type to search 120+ Jewish texts with autocomplete
+- **Load Text Button**: Fetch text from Sefaria API
+- **Language Toggle (EN/HE)**: Switch between English and Hebrew text display
+- **Record Button**: Start/stop speech recording
+
+### Main Text Display
+- **Scrollable Text Area**: Shows loaded Sefaria text
+- **Clean HTML Rendering**: Strips formatting for readability
+- **Hebrew Font Support**: Proper right-to-left text display
+- **Verse Numbering**: Automatic numbering for verse lists
+
+### Transcript Panel (Collapsible)
 - **Live Transcript**: Real-time display of speech recognition
-- **Status Indicator**: Shows recording status (●)
-- **Status Bar**: Session duration and transcript count
+- **Session Management**: Auto-save with text context
+- **Language Detection**: Color-coded Hebrew/English detection
+- **Toggle Button**: Show/hide transcript panel
 
 ### Keyboard Shortcuts
+- **Cmd/Ctrl+L**: Load text from reference field
+- **Cmd/Ctrl+T**: Toggle language (EN/HE)
 - **Space Bar**: Toggle recording on/off
 - **Cmd+Q** (Mac) / **Ctrl+Q** (Windows/Linux): Quit application
 
 ### Visual Design
 - Clean, minimal interface inspired by Apple Notes
+- Professional autocomplete dropdown with proper contrast
+- Responsive layout optimized for study sessions
 - Color-coded language detection (Hebrew/English)
-- Auto-scrolling transcript display
-- Responsive layout that works on different screen sizes
 
-## How It Works
+## How It Works - Phase 8 Enhanced
 
-1. **Start Recording**: Click the large "START" button
-2. **Speak Naturally**: The app detects speech and transcribes in real-time
-3. **Language Detection**: Automatically detects Hebrew and English
-4. **Auto-Save**: Sessions are automatically saved when you stop recording
-5. **View Transcripts**: All transcripts appear in the live display area
+1. **Load Text**: Type a text reference (e.g., "Genesis", "Chayei Adam") and select from autocomplete
+2. **Choose Language**: Toggle between English and Hebrew text display
+3. **Start Recording**: Click the record button to begin speech recognition
+4. **Speak Naturally**: The app detects speech and transcribes in real-time
+5. **Language Detection**: Automatically detects Hebrew and English
+6. **Auto-Save**: Sessions are automatically saved with text context
+7. **View Results**: All transcripts appear in the collapsible panel
 
 ## Troubleshooting
 
