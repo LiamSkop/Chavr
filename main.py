@@ -389,6 +389,20 @@ class ChavrApp:
         self.session_storage = SessionStorage()
         self.current_session = None
         
+        # Phase 9: AI integration
+        from gemini_manager import create_gemini_manager
+        self.gemini_manager = create_gemini_manager()
+        
+        if self.gemini_manager:
+            print("✓ AI Chavruta partner initialized")
+        else:
+            print("⚠ AI features disabled (no API key)")
+        
+        # AI processing queue for non-blocking execution
+        self.ai_queue = queue.Queue()
+        self.ai_worker_thread = None
+        self.ai_processing = False
+        
         # Optionally print available audio devices once (lean runtime)
         try:
             print("Available audio input devices:")
@@ -438,15 +452,46 @@ class ChavrApp:
         if self.transcription_thread and self.transcription_thread.is_alive():
             self.transcription_thread.join(timeout=3)
         
+        # Phase 9: Stop AI worker if running
+        if self.ai_processing:
+            self.ai_processing = False
+            if self.ai_worker_thread and self.ai_worker_thread.is_alive():
+                self.ai_worker_thread.join(timeout=5)
+        
         # End and save current session
         if self.current_session:
             self.current_session.end_session()
+            
+            # Phase 9: Generate session summary (only if >5 transcripts)
+            if self.gemini_manager and self.current_session.get_transcript_count() > 5:
+                print("\n[AI] Generating session summary...")
+                try:
+                    summary = self.gemini_manager.generate_session_summary(self.current_session)
+                    if summary:
+                        self.current_session.set_ai_summary(summary)
+                        print(f"\n{'='*60}")
+                        print(f"[Session Summary]")
+                        print(f"{'='*60}")
+                        print(summary)
+                        print(f"{'='*60}\n")
+                    else:
+                        print("⚠ Could not generate summary")
+                except Exception as e:
+                    print(f"Error generating summary: {e}")
+            
             try:
                 filename = self.session_storage.save_session(self.current_session)
                 print(f"✓ Session saved: {filename}")
                 print(f"  Transcripts: {self.current_session.get_transcript_count()}")
                 print(f"  Duration: {self.current_session.duration:.1f}s")
                 print(f"  Languages: {', '.join(self.current_session.get_languages_used())}")
+                
+                # Phase 9: Display AI statistics if available
+                if self.current_session.get_ai_interaction_count() > 0:
+                    print(f"  AI Interactions: {self.current_session.get_ai_interaction_count()}")
+                if self.current_session.has_ai_summary():
+                    print(f"  Summary: Generated ✓")
+                    
             except Exception as e:
                 print(f"Error saving session: {e}")
             self.current_session = None
@@ -478,6 +523,13 @@ class ChavrApp:
                     # Call GUI callback if available
                     if self.transcript_callback:
                         self.transcript_callback(text, language, timestamp)
+                    
+                    # Phase 9: Detect AI command
+                    if self._detect_ai_command(text):
+                        question = self._extract_question(text)
+                        if question:
+                            print(f"[AI] Detected question: {question}")
+                            self._handle_ai_question(question, timestamp)
                 
                 transcription_queue.task_done()
                 
@@ -547,6 +599,167 @@ class ChavrApp:
         except Exception as e:
             print(f"Error during transcription: {e}")
             return None, None
+    
+    def _detect_ai_command(self, text: str) -> bool:
+        """
+        Detect if text contains an AI command trigger.
+        
+        Supported triggers:
+        - "Chavr,"
+        - "Chaver,"
+        - "Hey Chavr,"
+        - "Hey Chaver,"
+        - "Chavr" (without comma)
+        - "Chaver" (without comma)
+        
+        Args:
+            text (str): Transcribed text
+            
+        Returns:
+            bool: True if AI command detected
+        """
+        text_lower = text.lower().strip()
+        
+        triggers = [
+            'hey chavr,',
+            'hey chaver,',
+            'chavr,',
+            'chaver,',
+            'hey chavr',
+            'hey chaver',
+            'chavr',
+            'chaver'
+        ]
+        
+        for trigger in triggers:
+            if text_lower.startswith(trigger):
+                return True
+        
+        return False
+    
+    def _extract_question(self, text: str) -> str:
+        """
+        Extract question from AI command by removing trigger phrase.
+        
+        Args:
+            text (str): Full transcribed text with trigger
+            
+        Returns:
+            str: Question without trigger phrase
+        """
+        text_lower = text.lower().strip()
+        
+        # Remove trigger phrases (order matters - longer first)
+        triggers = [
+            'hey chavr,',
+            'hey chaver,',
+            'chavr,',
+            'chaver,',
+            'hey chavr',
+            'hey chaver',
+            'chavr',
+            'chaver'
+        ]
+        
+        for trigger in triggers:
+            if text_lower.startswith(trigger):
+                # Remove trigger and return rest
+                question = text[len(trigger):].strip()
+                # Remove leading comma if present
+                if question.startswith(','):
+                    question = question[1:].strip()
+                return question
+        
+        return text.strip()
+    
+    def _handle_ai_question(self, question: str, timestamp: datetime):
+        """
+        Process AI question in background thread (non-blocking).
+        
+        Args:
+            question (str): User's question
+            timestamp (datetime): When question was asked
+        """
+        if not self.gemini_manager:
+            print("⚠ AI not available (no API key)")
+            return
+        
+        # Queue the question for background processing
+        self.ai_queue.put({
+            'question': question,
+            'timestamp': timestamp
+        })
+        
+        # Start AI worker thread if not running
+        if not self.ai_processing:
+            self._start_ai_worker()
+    
+    def _start_ai_worker(self):
+        """Start background thread for AI processing."""
+        if self.ai_worker_thread and self.ai_worker_thread.is_alive():
+            return
+        
+        self.ai_processing = True
+        self.ai_worker_thread = threading.Thread(target=self._ai_worker)
+        self.ai_worker_thread.daemon = True
+        self.ai_worker_thread.start()
+    
+    def _ai_worker(self):
+        """Background worker for processing AI requests."""
+        while self.ai_processing or not self.ai_queue.empty():
+            try:
+                # Get question from queue (with timeout)
+                ai_request = self.ai_queue.get(timeout=1.0)
+                
+                question = ai_request['question']
+                timestamp = ai_request['timestamp']
+                
+                print(f"[AI] Processing: {question[:50]}...")
+                
+                # Update context with recent transcripts (efficient)
+                if self.current_session:
+                    # Convert transcript entries to dict format
+                    transcript_context = [
+                        {'text': t.text, 'language': t.language}
+                        for t in self.current_session.transcripts[-10:]
+                    ]
+                    self.gemini_manager.add_transcript_context(transcript_context)
+                
+                # Get AI response
+                response = self.gemini_manager.ask_question(question)
+                
+                if response:
+                    # Store in session
+                    if self.current_session:
+                        self.current_session.add_ai_interaction(
+                            question=question,
+                            response=response,
+                            timestamp=timestamp
+                        )
+                    
+                    # Display in CLI with special formatting
+                    print(f"\n{'='*60}")
+                    print(f"[AI Chavruta Response]")
+                    print(f"{'='*60}")
+                    print(response)
+                    print(f"{'='*60}\n")
+                    
+                    # Send to GUI callback with language='ai'
+                    if self.transcript_callback:
+                        self.transcript_callback(response, 'ai', timestamp)
+                else:
+                    print("⚠ AI did not return a response")
+                
+                self.ai_queue.task_done()
+                
+            except queue.Empty:
+                # No more requests, exit worker
+                break
+            except Exception as e:
+                print(f"Error in AI worker: {e}")
+                continue
+        
+        self.ai_processing = False
     
     # Removed single-phrase listen mode to keep code lean (continuous mode covers core use case)
     
@@ -619,6 +832,12 @@ class ChavrApp:
         # Stop continuous listening if active
         if self.is_continuous_mode:
             self.stop_continuous_listening()
+        
+        # Phase 9: Stop AI worker
+        if hasattr(self, 'ai_processing') and self.ai_processing:
+            self.ai_processing = False
+            if hasattr(self, 'ai_worker_thread') and self.ai_worker_thread and self.ai_worker_thread.is_alive():
+                self.ai_worker_thread.join(timeout=2)
         
         # Clean up streaming recorder
         if hasattr(self, 'streaming_recorder'):

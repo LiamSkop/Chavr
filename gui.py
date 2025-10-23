@@ -63,7 +63,7 @@ class ChavrGUI:
         self._bind_shortcuts()
     
     def _setup_ui(self):
-        """Setup the main UI layout."""
+        """Setup the main UI layout with AI chat panel."""
         # Main container with padding
         main_frame = tk.Frame(self.root, bg="#FFFFFF", padx=20, pady=20)
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -79,6 +79,15 @@ class ChavrGUI:
         
         # Phase 8: Collapsible transcript panel
         self._create_transcript_panel(main_frame)
+        
+        # Phase 9: AI Chat Panel (collapsible)
+        self._create_ai_chat_panel(main_frame)
+        
+        # Phase 9: AI Summary Panel (separate, collapsible)
+        self._create_ai_summary_panel(main_frame)
+        
+        # Control buttons
+        self._create_control_buttons(main_frame)
         
         # Status bar
         self._create_status_bar(main_frame)
@@ -101,7 +110,7 @@ class ChavrGUI:
         # Model info
         model_info = tk.Label(
             header_frame,
-            text="Phase 8 Enhanced",
+            text="Phase 9 Enhanced - AI Chavruta",
             font=("Helvetica", 10),
             fg="#6B7280",
             bg="#FFFFFF"
@@ -343,6 +352,42 @@ class ChavrGUI:
             # Update session if recording
             if self.app.current_session:
                 self.app.current_session.set_sefaria_text(reference, self.current_text_language)
+            
+            # Phase 9: Update AI context with full text content
+            if hasattr(self.app, 'gemini_manager') and self.app.gemini_manager:
+                try:
+                    # Extract text content from Sefaria response
+                    if self.current_text_language == "en":
+                        content = text_data.get('text', [])
+                    else:
+                        content = text_data.get('he', [])
+                    
+                    # Flatten if nested list
+                    if isinstance(content, list):
+                        if len(content) > 0 and isinstance(content[0], list):
+                            # Nested structure - flatten
+                            full_text = ' '.join([' '.join(str(item) for item in section) for section in content])
+                        else:
+                            # Simple list
+                            full_text = ' '.join(str(item) for item in content)
+                    else:
+                        full_text = str(content)
+                    
+                    # Strip HTML tags if present
+                    import re
+                    full_text = re.sub(r'<[^>]+>', '', full_text)
+                    
+                    # Update AI context
+                    self.app.gemini_manager.set_sefaria_context(
+                        reference=reference,
+                        text_content=full_text,
+                        language=self.current_text_language
+                    )
+                    
+                    print(f"✓ AI context updated with {reference}")
+                    
+                except Exception as e:
+                    print(f"Warning: Could not update AI context: {e}")
             
             self.status_bar.configure(text=f"Loaded: {reference}")
         else:
@@ -597,11 +642,17 @@ class ChavrGUI:
             self._show_error(f"Failed to stop recording: {e}")
     
     def _on_transcript(self, text, language, timestamp):
-        """Callback for new transcript from ChavrApp."""
+        """Enhanced transcript callback to handle AI responses."""
         if text == "PROCESSING":
             # Show processing indicator
             self.status_bar.configure(text="Processing speech...")
+        elif language == 'ai':
+            # This is an AI response
+            self._add_chat_message(text, "ai")
+            self._set_ai_status("Ready", "#28A745")
+            self.ask_chavr_btn.configure(state=tk.NORMAL)
         else:
+            # Regular transcript
             self.transcript_queue.put((text, language, timestamp))
             self.status_bar.configure(text="Recording...")
     
@@ -689,6 +740,407 @@ class ChavrGUI:
         self.root.quit()
         self.root.destroy()
     
+    def _create_control_buttons(self, parent):
+        """Create control buttons (placeholder for future buttons)."""
+        # This method is called but control buttons are created in other sections
+        # Keeping it for consistency with the layout structure
+        pass
+    
+    def _create_ai_chat_panel(self, parent):
+        """Create the collapsible AI chat panel."""
+        # Chat panel container
+        self.ai_chat_frame = tk.Frame(parent, bg="#F8F9FA", relief=tk.RAISED, bd=1)
+        self.ai_chat_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        # Chat panel header with collapse/expand button
+        chat_header = tk.Frame(self.ai_chat_frame, bg="#E9ECEF", height=40)
+        chat_header.pack(fill=tk.X)
+        chat_header.pack_propagate(False)
+        
+        # Collapse/expand button
+        self.ai_chat_collapsed = False
+        self.ai_chat_toggle_btn = tk.Button(
+            chat_header,
+            text="▼ AI Chavruta",
+            command=self._toggle_ai_chat,
+            bg="#E9ECEF",
+            fg="#495057",
+            font=("Arial", 10, "bold"),
+            relief=tk.FLAT,
+            bd=0
+        )
+        self.ai_chat_toggle_btn.pack(side=tk.LEFT, padx=10, pady=8)
+        
+        # AI status indicator
+        self.ai_status_label = tk.Label(
+            chat_header,
+            text="Ready",
+            bg="#E9ECEF",
+            fg="#28A745",
+            font=("Arial", 9)
+        )
+        self.ai_status_label.pack(side=tk.RIGHT, padx=10, pady=8)
+        
+        # Chat messages area (scrollable)
+        self.ai_chat_container = tk.Frame(self.ai_chat_frame, bg="#FFFFFF")
+        self.ai_chat_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Create scrollable chat area
+        self.ai_chat_canvas = tk.Canvas(
+            self.ai_chat_container,
+            bg="#FFFFFF",
+            highlightthickness=0
+        )
+        self.ai_chat_scrollbar = tk.Scrollbar(
+            self.ai_chat_container,
+            orient=tk.VERTICAL,
+            command=self.ai_chat_canvas.yview
+        )
+        self.ai_chat_scrollable_frame = tk.Frame(self.ai_chat_canvas, bg="#FFFFFF")
+        
+        self.ai_chat_canvas.configure(yscrollcommand=self.ai_chat_scrollbar.set)
+        self.ai_chat_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.ai_chat_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Create window in canvas for scrollable frame
+        self.ai_chat_canvas.create_window((0, 0), window=self.ai_chat_scrollable_frame, anchor="nw")
+        
+        # Bind mousewheel to canvas
+        self.ai_chat_canvas.bind("<MouseWheel>", self._on_chat_scroll)
+        
+        # Chat input area
+        self._create_chat_input_area()
+        
+        # Initially collapsed
+        self._toggle_ai_chat()
+    
+    def _create_chat_input_area(self):
+        """Create the chat input area with multi-line text."""
+        input_frame = tk.Frame(self.ai_chat_frame, bg="#F8F9FA", height=80)
+        input_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+        input_frame.pack_propagate(False)
+        
+        # Multi-line text input
+        self.ai_input_text = tk.Text(
+            input_frame,
+            height=3,
+            wrap=tk.WORD,
+            font=("Arial", 10),
+            bg="#FFFFFF",
+            fg="#212529",
+            relief=tk.SUNKEN,
+            bd=1
+        )
+        self.ai_input_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        
+        # Input buttons frame
+        buttons_frame = tk.Frame(input_frame, bg="#F8F9FA")
+        buttons_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Ask Chavr button
+        self.ask_chavr_btn = tk.Button(
+            buttons_frame,
+            text="Ask Chavr",
+            command=self._ask_chavr_manual,
+            bg="#007BFF",
+            fg="white",
+            font=("Arial", 9, "bold"),
+            relief=tk.RAISED,
+            bd=1,
+            padx=10,
+            pady=5
+        )
+        self.ask_chavr_btn.pack(fill=tk.X, pady=(0, 5))
+        
+        # Clear button
+        self.clear_chat_btn = tk.Button(
+            buttons_frame,
+            text="Clear",
+            command=self._clear_chat,
+            bg="#6C757D",
+            fg="white",
+            font=("Arial", 9),
+            relief=tk.RAISED,
+            bd=1,
+            padx=10,
+            pady=5
+        )
+        self.clear_chat_btn.pack(fill=tk.X)
+        
+        # Bind Enter key to send (Ctrl+Enter for new line)
+        self.ai_input_text.bind("<Return>", self._on_input_return)
+        self.ai_input_text.bind("<Control-Return>", self._on_input_ctrl_return)
+    
+    def _create_ai_summary_panel(self, parent):
+        """Create the separate AI summary panel."""
+        # Summary panel container
+        self.ai_summary_frame = tk.Frame(parent, bg="#F0F8FF", relief=tk.RAISED, bd=1)
+        self.ai_summary_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        # Summary panel header
+        summary_header = tk.Frame(self.ai_summary_frame, bg="#D1ECF1", height=35)
+        summary_header.pack(fill=tk.X)
+        summary_header.pack_propagate(False)
+        
+        # Summary toggle button
+        self.ai_summary_collapsed = True
+        self.ai_summary_toggle_btn = tk.Button(
+            summary_header,
+            text="▶ Session Summary",
+            command=self._toggle_ai_summary,
+            bg="#D1ECF1",
+            fg="#0C5460",
+            font=("Arial", 9, "bold"),
+            relief=tk.FLAT,
+            bd=0
+        )
+        self.ai_summary_toggle_btn.pack(side=tk.LEFT, padx=10, pady=6)
+        
+        # Generate summary button
+        self.generate_summary_btn = tk.Button(
+            summary_header,
+            text="Generate Summary",
+            command=self._generate_summary_manual,
+            bg="#17A2B8",
+            fg="white",
+            font=("Arial", 8),
+            relief=tk.RAISED,
+            bd=1,
+            padx=8,
+            pady=3
+        )
+        self.generate_summary_btn.pack(side=tk.RIGHT, padx=10, pady=6)
+        
+        # Summary content area
+        self.ai_summary_content = tk.Text(
+            self.ai_summary_frame,
+            height=6,
+            wrap=tk.WORD,
+            font=("Arial", 10),
+            bg="#FFFFFF",
+            fg="#212529",
+            relief=tk.SUNKEN,
+            bd=1,
+            state=tk.DISABLED
+        )
+        
+        # Initially collapsed (don't pack the content)
+        # self._toggle_ai_summary()  # This was causing the issue
+    
+    def _toggle_ai_chat(self):
+        """Toggle AI chat panel visibility."""
+        if self.ai_chat_collapsed:
+            # Expand
+            self.ai_chat_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            self.ai_chat_toggle_btn.configure(text="▼ AI Chavruta")
+            self.ai_chat_collapsed = False
+        else:
+            # Collapse
+            self.ai_chat_container.pack_forget()
+            self.ai_chat_toggle_btn.configure(text="▶ AI Chavruta")
+            self.ai_chat_collapsed = True
+    
+    def _toggle_ai_summary(self):
+        """Toggle AI summary panel visibility."""
+        if self.ai_summary_collapsed:
+            # Expand
+            self.ai_summary_content.pack(fill=tk.X, padx=5, pady=5)
+            self.ai_summary_toggle_btn.configure(text="▼ Session Summary")
+            self.ai_summary_collapsed = False
+        else:
+            # Collapse
+            self.ai_summary_content.pack_forget()
+            self.ai_summary_toggle_btn.configure(text="▶ Session Summary")
+            self.ai_summary_collapsed = True
+    
+    def _ask_chavr_manual(self):
+        """Handle manual 'Ask Chavr' button click."""
+        question = self.ai_input_text.get("1.0", tk.END).strip()
+        if not question:
+            self._show_error("Please enter a question")
+            return
+        
+        # Clear input
+        self.ai_input_text.delete("1.0", tk.END)
+        
+        # Add user message to chat
+        self._add_chat_message(question, "user")
+        
+        # Set status to processing
+        self._set_ai_status("Processing...", "#FFC107")
+        
+        # Disable button during processing
+        self.ask_chavr_btn.configure(state=tk.DISABLED)
+        
+        # Process question through AI
+        if hasattr(self.app, 'gemini_manager') and self.app.gemini_manager:
+            # Use existing AI processing
+            from datetime import datetime
+            timestamp = datetime.now()
+            self.app._handle_ai_question(question, timestamp)
+        else:
+            self._add_chat_message("AI not available (no API key)", "error")
+            self._set_ai_status("Not Available", "#DC3545")
+            self.ask_chavr_btn.configure(state=tk.NORMAL)
+    
+    def _generate_summary_manual(self):
+        """Handle manual summary generation."""
+        if not self.app.current_session:
+            self._show_error("No active session to summarize")
+            return
+        
+        if self.app.current_session.get_transcript_count() < 5:
+            self._show_error("Need at least 5 transcripts to generate summary")
+            return
+        
+        # Set status to processing
+        self._set_ai_status("Generating Summary...", "#FFC107")
+        self.generate_summary_btn.configure(state=tk.DISABLED)
+        
+        # Generate summary
+        if hasattr(self.app, 'gemini_manager') and self.app.gemini_manager:
+            try:
+                summary = self.app.gemini_manager.generate_session_summary(self.app.current_session)
+                if summary:
+                    self.app.current_session.set_ai_summary(summary)
+                    self._display_summary(summary)
+                    self._set_ai_status("Summary Generated", "#28A745")
+                else:
+                    self._show_error("Failed to generate summary")
+                    self._set_ai_status("Failed", "#DC3545")
+            except Exception as e:
+                self._show_error(f"Error generating summary: {e}")
+                self._set_ai_status("Error", "#DC3545")
+        else:
+            self._show_error("AI not available (no API key)")
+            self._set_ai_status("Not Available", "#DC3545")
+        
+        self.generate_summary_btn.configure(state=tk.NORMAL)
+    
+    def _add_chat_message(self, text: str, sender: str):
+        """Add a message to the chat panel."""
+        # Create message frame
+        message_frame = tk.Frame(self.ai_chat_scrollable_frame, bg="#FFFFFF")
+        message_frame.pack(fill=tk.X, padx=5, pady=2)
+        
+        # Configure alignment and colors based on sender
+        if sender == "user":
+            align = tk.RIGHT
+            bg_color = "#007BFF"
+            fg_color = "white"
+            label_text = "You"
+        elif sender == "ai":
+            align = tk.LEFT
+            bg_color = "#6C757D"
+            fg_color = "white"
+            label_text = "AI Chavruta"
+        elif sender == "error":
+            align = tk.LEFT
+            bg_color = "#DC3545"
+            fg_color = "white"
+            label_text = "Error"
+        else:
+            align = tk.LEFT
+            bg_color = "#6C757D"
+            fg_color = "white"
+            label_text = sender
+        
+        # Message bubble
+        bubble_frame = tk.Frame(message_frame, bg=bg_color, relief=tk.RAISED, bd=1)
+        if align == tk.RIGHT:
+            bubble_frame.pack(side=tk.RIGHT, padx=(50, 5))
+        else:
+            bubble_frame.pack(side=tk.LEFT, padx=(5, 50))
+        
+        # Message text
+        message_label = tk.Label(
+            bubble_frame,
+            text=text,
+            bg=bg_color,
+            fg=fg_color,
+            font=("Arial", 10),
+            wraplength=400,
+            justify=tk.LEFT
+        )
+        message_label.pack(padx=10, pady=5)
+        
+        # Timestamp
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M")
+        time_label = tk.Label(
+            message_frame,
+            text=f"{label_text} • {timestamp}",
+            bg="#FFFFFF",
+            fg="#6C757D",
+            font=("Arial", 8)
+        )
+        if align == tk.RIGHT:
+            time_label.pack(side=tk.RIGHT, padx=(50, 5))
+        else:
+            time_label.pack(side=tk.LEFT, padx=(5, 50))
+        
+        # Update canvas scroll region
+        self.ai_chat_canvas.update_idletasks()
+        self.ai_chat_canvas.configure(scrollregion=self.ai_chat_canvas.bbox("all"))
+        
+        # Auto-scroll to bottom
+        self.ai_chat_canvas.yview_moveto(1.0)
+    
+    def _display_summary(self, summary: str):
+        """Display summary in the summary panel."""
+        self.ai_summary_content.configure(state=tk.NORMAL)
+        self.ai_summary_content.delete("1.0", tk.END)
+        self.ai_summary_content.insert("1.0", summary)
+        self.ai_summary_content.configure(state=tk.DISABLED)
+        
+        # Expand summary panel if collapsed
+        if self.ai_summary_collapsed:
+            self._toggle_ai_summary()
+    
+    def _set_ai_status(self, status: str, color: str):
+        """Set AI status indicator."""
+        self.ai_status_label.configure(text=status, fg=color)
+    
+    def _clear_chat(self):
+        """Clear the chat panel."""
+        for widget in self.ai_chat_scrollable_frame.winfo_children():
+            widget.destroy()
+        self.ai_chat_canvas.configure(scrollregion=self.ai_chat_canvas.bbox("all"))
+    
+    def _on_input_return(self, event):
+        """Handle Enter key in input (send message)."""
+        self._ask_chavr_manual()
+        return "break"  # Prevent default behavior
+    
+    def _on_input_ctrl_return(self, event):
+        """Handle Ctrl+Enter (new line)."""
+        # Allow default behavior (new line)
+        pass
+    
+    def _on_chat_scroll(self, event):
+        """Handle mousewheel scrolling in chat."""
+        self.ai_chat_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    
+    def _load_session_chat_history(self, session):
+        """Load chat history when session is loaded."""
+        if not session:
+            return
+        
+        # Clear existing chat
+        self._clear_chat()
+        
+        # Load AI interactions
+        if hasattr(session, 'ai_interactions') and session.ai_interactions:
+            for interaction in session.ai_interactions:
+                # Add user question
+                self._add_chat_message(interaction['question'], "user")
+                # Add AI response
+                self._add_chat_message(interaction['response'], "ai")
+        
+        # Load summary if available
+        if hasattr(session, 'ai_summary') and session.ai_summary:
+            self._display_summary(session.ai_summary)
+
     def run(self):
         """Run the GUI application."""
         # Handle window close event

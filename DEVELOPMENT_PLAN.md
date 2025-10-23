@@ -242,40 +242,157 @@ class SefariaManager:
 
 ---
 
-## **Phase 9: AI Intelligence Layer (Days 20-25)** 🧠 UPCOMING
+## **Phase 9: AI Intelligence Layer (Days 20-25)** 🧠 IN PROGRESS
 
-### Step 17: LLM Integration ⏳
-- [ ] Choose LLM approach (Claude 3 API vs. self-hosted DictaLM 2.0)
-- [ ] Set up API credentials and test connection
-- [ ] Create LLM wrapper class with prompt templates
-- [ ] Implement basic Q&A functionality
-- [ ] Add conversation history management
+### Step 17: Gemini 2.0 Flash Experimental Integration ✅ COMPLETE
+- [x] Choose LLM approach (Selected: Gemini 2.0 Flash Experimental)
+- [x] Set up API credentials and test connection
+- [x] Install google-generativeai SDK (>=0.3.0)
+- [x] Create GeminiManager wrapper class with prompt templates
+- [x] Implement basic Q&A functionality with context-aware prompts
+- [x] Add conversation history management (last 10 transcripts)
+- [x] Implement session summarization feature
+- [x] Add comprehensive error handling (API failures, rate limits, quota)
+- [x] Test with Hebrew and English text contexts
+- [x] Create test suite (test_gemini.py) with 6 comprehensive tests
+- [x] Update documentation (README.md) with Phase 9 features
+- [x] Add .env configuration for API key management
 
-### Step 18: RAG Architecture ⏳
-- [ ] Install vector database (ChromaDB for simplicity)
-- [ ] Install Hebrew embedding model (avichr/heBERT)
-- [ ] Create text chunking and embedding pipeline
-- [ ] Implement semantic search over source texts
-- [ ] Build RAG prompt template (context + question → answer)
+**Completed Implementation:**
+- `gemini_manager.py` - Full AI integration with all required methods
+- `test_gemini.py` - Comprehensive test suite (5/6 tests passing)
+- `.env.example` - API key template
+- `.gitignore` - Environment file protection
+- Updated `requirements.txt` with google-generativeai
 
-### Step 19: Chavruta Interaction Mode ⏳
-- [ ] Design Socratic questioning prompts
-- [ ] Implement "Challenge Mode" - AI asks questions instead of answering
-- [ ] Add error correction logic (detect mistranslations/misunderstandings)
-- [ ] Create turn-taking system for AI-led study
-- [ ] Test with real study sessions
+**Model Used:** `gemini-2.0-flash-exp` (latest available)
+**Cost:** Free tier: 1500 requests/day, then ~$0.075/1000 requests
+
+### Step 18: AI Command Detection & Integration ⏳ NEXT
+- [ ] Implement voice command detection in `main.py`
+  - [ ] Add method `_detect_ai_command(text)` to check for "Chavr," or "Chaver," trigger phrases
+  - [ ] Add method `_extract_question(text)` to remove trigger phrase and extract question
+  - [ ] Add method `_handle_ai_question(question)` to process AI queries
+- [ ] Initialize GeminiManager in ChavrApp.__init__()
+  - [ ] Load API key from environment using `create_gemini_manager()`
+  - [ ] Handle case when API key is not set (graceful degradation)
+  - [ ] Pass Sefaria context when text is loaded
+  - [ ] Update context with recent transcripts during sessions
+- [ ] Integrate AI responses into transcript callback system
+  - [ ] Modify `_transcription_worker()` to detect AI commands
+  - [ ] Call GeminiManager.ask_question() when command detected
+  - [ ] Pass AI response back via transcript_callback with special flag
+  - [ ] Add AI interaction tracking to current_session
+- [ ] Add automatic session summarization
+  - [ ] Generate summary in `stop_continuous_listening()`
+  - [ ] Store summary with session using `set_ai_summary()`
+  - [ ] Display summary in console/GUI
+- [ ] Test end-to-end command → response flow
+
+**Integration Points:**
+```python
+# In main.py ChavrApp class:
+def __init__(self, ...):
+    self.gemini_manager = create_gemini_manager()
+    
+def _transcription_worker(self):
+    # Detect "Chavr," in transcription
+    if self._detect_ai_command(text):
+        question = self._extract_question(text)
+        response = self._handle_ai_question(question)
+        # Send to GUI callback
+        
+def stop_continuous_listening(self):
+    # Generate summary before saving
+    if self.gemini_manager and self.current_session:
+        summary = self.gemini_manager.generate_session_summary(self.current_session)
+        self.current_session.set_ai_summary(summary)
+```
+
+### Step 19: GUI AI Chat Panel ⏳ FUTURE
+- [ ] Extend Session model to store AI interactions
+  - [ ] Add `ai_summary` field for session summaries
+  - [ ] Add `ai_interactions` list to track Q&A exchanges
+  - [ ] Add methods: `add_ai_interaction(question, response)`, `set_ai_summary(summary)`
+  - [ ] Update `to_dict()` and `from_dict()` for serialization
+- [ ] Create collapsible "AI Chavruta" chat panel in gui.py
+  - [ ] Add panel below transcript panel
+  - [ ] Implement chat-style message display (user vs AI)
+  - [ ] Add visual distinction: user messages (right-aligned, blue), AI messages (left-aligned, gray)
+  - [ ] Add timestamp for each message
+  - [ ] Implement auto-scroll to latest message
+- [ ] Add "Ask Chavr" button for manual triggers
+  - [ ] Create input field for typing questions
+  - [ ] Add button to submit questions
+  - [ ] Show loading indicator while AI processes
+- [ ] Add AI status indicator
+  - [ ] Show when AI is processing
+  - [ ] Display error messages from AI callback
+- [ ] Add "Generate Summary" button
+  - [ ] Appears after session ends
+  - [ ] Triggers summary generation
+  - [ ] Display summary in modal dialog or dedicated panel
+- [ ] Update GUI to pass Sefaria context to AI
+  - [ ] Call `gemini_manager.set_sefaria_context()` when text loaded
+  - [ ] Update context when language toggled
+- [ ] Implement chat history persistence
+  - [ ] Save AI interactions with session
+  - [ ] Load and display chat history when session loaded
+- [ ] Test UI responsiveness during AI processing
+
+**GUI Layout:**
+```
+┌─────────────────────────────────────┐
+│ Chavr - Phase 9 Enhanced            │
+├─────────────────────────────────────┤
+│ [Text Reference Input] [Load]       │
+│ ┌─────────────────────────────────┐ │
+│ │ Sefaria Text Display            │ │
+│ └─────────────────────────────────┘ │
+│ ┌─────────────────────────────────┐ │
+│ │ Live Transcript                 │ │
+│ │ [14:30] שלום                    │ │
+│ │ [14:31] Hello                   │ │
+│ └─────────────────────────────────┘ │
+│ ▼ AI Chavruta                       │
+│ ┌─────────────────────────────────┐ │
+│ │ AI: A great question! Let's...  │ │
+│ │         User: Chavr, explain... │ │
+│ └─────────────────────────────────┘ │
+│ [Ask Chavr] [Generate Summary]      │
+└─────────────────────────────────────┘
+```
+
+**Scope for Phase 9:**
+- **Focus:** Real-time Q&A on explicit command + session summarization
+- **Model:** Gemini 2.0 Flash Experimental (fast, cost-effective)
+- **Context:** Current Sefaria text + last 5-10 transcript entries (lightweight)
+- **Response Style:** Balanced Chavruta (mix of Socratic questions, explanations, challenges)
+- **Triggers:** Voice command ("Chavr," / "Chaver,") or manual button press
+- **No RAG/Vector DB:** Simple context retrieval from current session only
 
 **Architecture:**
 ```
-User speaks → Whisper transcribes → Detect if question asked
+User speaks → Whisper transcribes → Display transcript
                                     ↓
-If question: Retrieve relevant text from Sefaria/RAG
-            ↓
-            Pass to LLM with context
-            ↓
-            Generate Socratic response (not direct answer)
-            ↓
-            Display to user + optional TTS
+User says "Chavr, [question]" OR clicks "Ask Chavr"
+                                    ↓
+            Extract question + gather context:
+            - Current Sefaria text (if loaded)
+            - Last 5-10 transcript entries
+                                    ↓
+            Build prompt for Gemini 2.0 Flash Experimental
+                                    ↓
+            Gemini generates balanced response
+            (questions + explanations + challenges)
+                                    ↓
+            Display in AI chat panel
+                                    ↓
+Session ends → "Generate Summary" (automatic)
+                                    ↓
+            Gemini analyzes full session
+                                    ↓
+            Display summary + save with session
 ```
 
 ---

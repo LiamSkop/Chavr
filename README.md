@@ -1,18 +1,23 @@
 # Chavr
 
-A Python speech recognition and audio processing application built with PyAudio, Whisper, and NumPy. **Phase 8 Enhanced** with Sefaria text integration and intelligent autocomplete.
+A Python speech recognition and audio processing application built with PyAudio, Whisper, and NumPy. **Phase 9 Enhanced** with AI Chavruta partner powered by Gemini 2.0 Flash Experimental.
 
 ## Features
 
+- **Phase 9 Enhanced**: AI Chavruta partner powered by Gemini 2.0 Flash Experimental
 - **Phase 8 Enhanced**: Sefaria text integration with intelligent autocomplete
 - **Phase 7 Enhanced**: Fine-tuned Hebrew Whisper model (`ivrit-ai/whisper-large-v3-ct2`)
 - Real-time speech recognition using OpenAI Whisper (faster-whisper optimized)
 - Multi-language support (Hebrew/English) with automatic language detection
-- **NEW**: Sefaria API integration for Jewish text fetching
-- **NEW**: Intelligent autocomplete with 120+ Jewish texts (Tanakh, Mishnah, Halachic works, etc.)
-- **NEW**: Text context management with session integration
-- **NEW**: Language toggle (EN/HE) for text display
-- **NEW**: Local text caching for offline access
+- **NEW**: AI-powered Q&A during study sessions (voice command: "Chavr, [question]")
+- **NEW**: Automatic session summarization with key insights
+- **NEW**: Context-aware AI responses using current Sefaria text and conversation history
+- **NEW**: Balanced Chavruta responses (Socratic questions, explanations, challenges)
+- Sefaria API integration for Jewish text fetching
+- Intelligent autocomplete with 120+ Jewish texts (Tanakh, Mishnah, Halachic works, etc.)
+- Text context management with session integration
+- Language toggle (EN/HE) for text display
+- Local text caching for offline access
 - Continuous audio streaming with Voice Activity Detection (VAD)
 - Session management and transcript storage
 - Post-processing filters to reduce hallucinations (e.g., repeated "you")
@@ -69,6 +74,34 @@ On first run, the fine-tuned Hebrew Whisper model (`ivrit-ai/whisper-large-v3-ct
 
 The application now includes Sefaria API integration for fetching Jewish texts. Text references are cached locally in the `sefaria_cache/` directory for offline access.
 
+### Phase 9 AI Chavruta Partner
+
+Chavr now includes an AI study partner powered by Google's Gemini 2.0 Flash Experimental model.
+
+#### Setup
+
+1. Get a Gemini API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Create a `.env` file in the project root:
+   ```
+   GEMINI_API_KEY=your_api_key_here
+   ```
+3. The AI will be available during study sessions
+
+#### Features
+
+- **Real-time Q&A**: Ask questions by saying "Chavr, [your question]" during study sessions
+- **Session Summaries**: Generate study session summaries automatically when sessions end
+- **Context-aware**: AI uses your current Sefaria text and recent conversation history
+- **Balanced responses**: Mix of Socratic questions, explanations, and challenges
+- **Multilingual**: Supports Hebrew and English naturally
+
+#### Cost
+
+Gemini 2.0 Flash Experimental is very affordable:
+- First 1500 requests/day: Free
+- After: ~$0.075 per 1000 requests
+- Typical usage: 10-50 requests per study session
+
 ## Usage
 
 ### Running the Application
@@ -85,6 +118,8 @@ The GUI provides an intuitive interface for:
 - Recording and transcribing speech in Hebrew/English
 - Managing study sessions with text context
 - Switching between English and Hebrew text display
+- **NEW**: AI-powered Q&A during study sessions
+- **NEW**: Session summaries and insights
 
 ### Phase 7 CLI Options
 
@@ -174,6 +209,8 @@ Chavr/
 - **openai-whisper** (>=20231117): OpenAI's Whisper speech recognition
 - **faster-whisper** (>=1.0.0): Optimized Whisper implementation with CTranslate2
 - **webrtcvad** (>=2.0.10): Voice Activity Detection library
+- **requests** (>=2.25.0): HTTP library for Sefaria API calls
+- **google-generativeai** (>=0.3.0): Google's Gemini AI model integration
 
 ## Features in Detail
 
@@ -185,6 +222,22 @@ Chavr/
 - Support for CPU and GPU acceleration
 - Word-level timestamps for precise transcription
 
+### Phase 8 Sefaria Integration
+- Real-time text fetching from Sefaria API
+- Intelligent autocomplete with 120+ Jewish texts
+- Local caching for offline access
+- Language toggle (EN/HE) for text display
+- HTML tag stripping for clean text display
+
+### Phase 9 AI Chavruta Partner
+- Gemini 2.0 Flash Experimental model integration
+- Context-aware responses using current Sefaria text and conversation history
+- Balanced Chavruta responses (Socratic questions, explanations, challenges)
+- Automatic session summarization with key insights
+- Voice command activation ("Chavr, [question]")
+- Multilingual support (Hebrew and English)
+- Comprehensive error handling for API failures
+
 ### Continuous Audio Processing
 - Real-time audio streaming with Voice Activity Detection
 - Session management and transcript storage
@@ -195,6 +248,7 @@ Chavr/
 - Graceful fallback to openai-whisper if faster-whisper fails
 - Comprehensive error messages and logging
 - Timeout management for speech detection
+- AI API error handling with user-friendly messages
 
 ## Troubleshooting
 
@@ -206,6 +260,9 @@ Chavr/
 4. **No audio devices found**: Check microphone permissions and connections
 5. **Permission errors**: Grant microphone access to your terminal/IDE
 6. **CUDA out of memory**: Use `--device cpu` or `--compute int8` for lower memory usage
+7. **AI not responding**: Check that GEMINI_API_KEY is set correctly in .env file
+8. **API quota exceeded**: Check your Google AI Studio billing and usage limits
+9. **Rate limit errors**: Wait a moment and try again, or check your API key permissions
 
 ### Getting Help
 
