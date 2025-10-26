@@ -137,7 +137,7 @@ You are studying with a partner who values thoughtful dialogue over quick answer
         Generate summary of completed study session.
         
         Args:
-            session: Session object with transcripts and metadata
+            session: Session object with AI interactions and metadata
             
         Returns:
             str: Session summary or None if failed
@@ -216,20 +216,20 @@ Keep the summary to 3-4 paragraphs maximum.
         # Add session metadata
         summary_prompt += f"Study Session: {session.title}\n"
         summary_prompt += f"Duration: {session.duration:.1f} seconds\n"
-        summary_prompt += f"Languages: {', '.join(session.get_languages_used())}\n\n"
         
         # Add Sefaria text if present
         if session.has_sefaria_text():
             text_info = session.get_sefaria_text_info()
             summary_prompt += f"Text Studied: {text_info['reference']}\n\n"
         
-        # Add full transcript (or truncate if too long)
-        summary_prompt += "Transcript:\n"
-        for entry in session.transcripts:
-            timestamp = entry.timestamp.strftime("%H:%M:%S")
-            summary_prompt += f"[{timestamp}] {entry.text}\n"
+        # Add AI interactions
+        summary_prompt += "Questions and Answers:\n"
+        for interaction in session.ai_interactions:
+            timestamp = interaction.get('timestamp', 'N/A')
+            summary_prompt += f"Q: {interaction['question']}\n"
+            summary_prompt += f"A: {interaction['response']}\n\n"
         
-        summary_prompt += "\n---\n\nSummary:"
+        summary_prompt += "---\n\nSummary:"
         
         return summary_prompt
     
