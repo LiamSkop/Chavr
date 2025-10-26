@@ -194,7 +194,7 @@ class TutorGUI:
         """Handle search box key press."""
         query = self.text_ref_entry.get()
         
-        if len(query) < 2:
+        if len(query) < 1:
             self._hide_search_results()
             return
         
@@ -206,7 +206,11 @@ class TutorGUI:
     
     def _perform_search(self, query):
         """Perform search and show results."""
+        print(f"DEBUG: Searching for '{query}'")
         results = self.sefaria_manager.search_texts(query, limit=6)
+        print(f"DEBUG: Found {len(results)} results")
+        if results:
+            print(f"DEBUG: Top result: {results[0]}")
         self._show_search_results(results)
     
     def _show_search_results(self, results):
@@ -215,22 +219,35 @@ class TutorGUI:
         self._hide_search_results()
         
         if not results:
+            print("DEBUG: No results to show")
             return
+        
+        print(f"DEBUG: Showing {len(results)} results")
         
         # Create results frame
         self.search_results_frame = tk.Frame(
-            self.text_ref_entry.master.master,
+            self.text_ref_entry.master.master.master,
             bg="#FFFFFF",
             relief=tk.SOLID,
-            bd=1
+            bd=2,
+            highlightbackground="#3B82F6",
+            highlightthickness=1
         )
         
         # Position below search box
-        self.search_results_frame.place(
-            x=self.text_ref_entry.winfo_x() + self.text_ref_entry.master.winfo_x(),
-            y=self.text_ref_entry.winfo_y() + self.text_ref_entry.master.winfo_y() + 40,
-            width=self.text_ref_entry.winfo_width() + 110
-        )
+        try:
+            # Get the position relative to root window
+            x_pos = self.text_ref_entry.winfo_x() + self.text_ref_entry.master.winfo_x()
+            y_pos = self.text_ref_entry.winfo_y() + self.text_ref_entry.master.winfo_y() + 45
+            width = self.text_ref_entry.winfo_width() + 110
+            
+            self.search_results_frame.place(
+                x=x_pos,
+                y=y_pos,
+                width=width
+            )
+        except Exception as e:
+            print(f"DEBUG: Error positioning results: {e}")
         
         # Display results
         for idx, result in enumerate(results):

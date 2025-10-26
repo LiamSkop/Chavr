@@ -268,15 +268,17 @@ class TextCatalog:
         Returns:
             List of (TextEntry, score) tuples sorted by score (highest first)
         """
-        if not query or len(query) < 2:
+        if not query or len(query) < 1:
             # Return popular texts if query is too short
             return self.get_popular_entries(limit)
         
-        query_lower = query.lower()
+        query_lower = query.lower().strip()
+        query_words = query_lower.split()  # Split into words for better matching
+        
         results = []
         
         for entry in self.entries:
-            score = self._score_result(query_lower, entry)
+            score = self._score_result(query_lower, entry, query_words)
             if score > 0:
                 results.append((entry, score))
         
@@ -285,49 +287,87 @@ class TextCatalog:
         
         return results[:limit]
     
-    def _score_result(self, query: str, entry: TextEntry) -> float:
+    def _score_result(self, query: str, entry: TextEntry, query_words: List[str] = None) -> float:
         """
         Score how well an entry matches a query.
         
         Args:
             query: Search query (lowercase)
             entry: TextEntry to score
+            query_words: Split query words (optional)
             
         Returns:
-            Score (0-200)
+            Score (0-300)
         """
+        if query_words is None:
+            query_words = query.split()
+        
         score = 0
         
-        # Exact match: +100
+        # Exact match on full name: +100
         if query == entry.name.lower():
             score += 100
         if query == entry.hebrew_name.lower():
             score += 100
         
-        # Hebrew name match: +90
-        if entry.hebrew_name.lower() in query or query in entry.hebrew_name.lower():
-            score += 90
+        # Exact match on multi-word: +90 (e.g., "chayei adam" matches "Chayei Adam")
+        if len(query_words) > 1:
+            # Check if all words appear in name
+            name_words = entry.name.lower().split()
+            hebrew_words = entry.hebrew_name.lower().split()
+            
+            all_match_name = all(any(word in nw for nw in name_words) for word in query_words)
+            all_match_hebrew = all(any(word in hw for hw in hebrew_words) for word in query_words)
+            
+            if all_match_name:
+                score += 90
+            if all_match_hebrew:
+                score += 90
         
-        # Starts with: +50
+        # Starts with: +60
         if entry.name.lower().startswith(query):
-            score += 50
+            score += 60
         if entry.hebrew_name.lower().startswith(query):
-            score += 50
+            score += 60
         
-        # Contains: +30
+        # Contains whole word: +40
+        name_words = entry.name.lower().split()
+        hebrew_words = entry.hebrew_name.lower().split()
+        
+        for word in query_words:
+            if any(word == nw for nw in name_words):
+                score += 40
+            if any(word == hw for hw in hebrew_words):
+                score += 40
+        
+        # Contains anywhere: +30
         if query in entry.name.lower():
             score += 30
         if query in entry.hebrew_name.lower():
             score += 30
         
+        # Check if any word in query matches any word in name
+        for word in query_words:
+            if word in entry.name.lower() or any(word in nw for nw in name_words):
+                score += 25
+            if word in entry.hebrew_name.lower() or any(word in hw for hw in hebrew_words):
+                score += 25
+        
         # Tag match: +20 per matching tag
         for tag in entry.tags:
             if query in tag.lower() or tag.lower() in query:
                 score += 20
+            # Also check word matches in tags
+            for word in query_words:
+                if word in tag.lower():
+                    score += 15
         
-        # Description match: +10
+        # Description match: +15
         if query in entry.description.lower():
-            score += 10
+            score += 15
+        for word in query_words:
+            if word in entry.description.lower():
+                score += 10
         
         # Popularity bonus: +5 per star
         score += entry.popularity * 5

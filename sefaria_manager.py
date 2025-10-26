@@ -474,6 +474,53 @@ class SefariaManager:
         # Fallback to name
         return entry.name
     
+    def extract_text_content(self, data: Dict[str, Any]) -> str:
+        """
+        Extract plain text content from Sefaria API response.
+        
+        Args:
+            data: Sefaria API response dictionary
+            
+        Returns:
+            Extracted text content as string
+        """
+        if not data:
+            return ""
+        
+        # Handle different response formats from Sefaria
+        text_parts = []
+        
+        def extract_text_helper(obj):
+            """Recursively extract text from nested structure."""
+            if isinstance(obj, str):
+                # Remove HTML tags
+                import re
+                clean_text = re.sub(r'<[^>]+>', '', obj)
+                if clean_text.strip():
+                    text_parts.append(clean_text.strip())
+            elif isinstance(obj, dict):
+                # Check for 'he' or 'text' keys
+                if 'he' in obj:
+                    extract_text_helper(obj['he'])
+                elif 'text' in obj:
+                    extract_text_helper(obj['text'])
+                # Recurse through all values
+                for value in obj.values():
+                    extract_text_helper(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    extract_text_helper(item)
+        
+        extract_text_helper(data)
+        
+        # Join all text parts with paragraph breaks
+        result = "\n\n".join(text_parts)
+        
+        # Clean up extra whitespace
+        result = re.sub(r'\n{3,}', '\n\n', result)
+        
+        return result
+    
     def search_text_names(self, query: str, limit: int = 10) -> list:
         """
         Search for text names using a predefined list of common Jewish texts.
