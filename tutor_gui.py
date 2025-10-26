@@ -78,28 +78,68 @@ class TutorGUI:
         title.pack()
     
     def _create_text_input_section(self, parent):
-        """Create text reference input section."""
-        input_frame = tk.Frame(parent, bg="#FFFFFF", relief=tk.SOLID, bd=1)
-        input_frame.pack(fill=tk.X, pady=(0, 15))
+        """Create smart text finder interface."""
+        finder_frame = tk.Frame(parent, bg="#FFFFFF", relief=tk.SOLID, bd=1)
+        finder_frame.pack(fill=tk.X, pady=(0, 15))
         
-        inner = tk.Frame(input_frame, bg="#FFFFFF", padx=15, pady=15)
-        inner.pack(fill=tk.X)
+        inner = tk.Frame(finder_frame, bg="#FFFFFF", padx=15, pady=15)
+        inner.pack(fill=tk.BOTH, expand=True)
+        
+        # Search box
+        self._create_search_box(inner)
+        
+        # Popular texts quick access
+        self._create_popular_texts(inner)
+        
+        # Language toggle
+        lang_frame = tk.Frame(inner, bg="#FFFFFF")
+        lang_frame.pack(anchor=tk.E, pady=(5, 0))
+        
+        self.lang_btn = tk.Button(
+            lang_frame,
+            text="EN",
+            command=self._toggle_language,
+            bg="#10B981",
+            fg="white",
+            font=("Arial", 9, "bold"),
+            relief=tk.FLAT,
+            padx=12,
+            pady=6,
+            cursor="hand2"
+        )
+        self.lang_btn.pack(side=tk.RIGHT)
+    
+    def _create_search_box(self, parent):
+        """Create search box with live results."""
+        search_frame = tk.Frame(parent, bg="#FFFFFF")
+        search_frame.pack(fill=tk.X, pady=(0, 10))
         
         tk.Label(
-            inner,
-            text="Study Text:",
+            search_frame,
+            text="Find a text to study:",
             font=("Arial", 11, "bold"),
             bg="#FFFFFF",
             fg="#374151"
-        ).pack(side=tk.LEFT, padx=(0, 10))
+        ).pack(anchor=tk.W, pady=(0, 5))
         
-        self.text_ref_entry = tk.Entry(inner, font=("Arial", 11), width=40)
-        self.text_ref_entry.pack(side=tk.LEFT, padx=(0, 10))
+        entry_frame = tk.Frame(search_frame, bg="#FFFFFF")
+        entry_frame.pack(fill=tk.X)
+        
+        self.text_ref_entry = tk.Entry(
+            entry_frame,
+            font=("Arial", 12),
+            relief=tk.SOLID,
+            bd=1
+        )
+        self.text_ref_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=8, padx=(0, 10))
+        self.text_ref_entry.bind('<KeyRelease>', self._on_search_keypress)
         self.text_ref_entry.bind('<Return>', lambda e: self._load_text())
+        self.text_ref_entry.bind('<Down>', lambda e: self._focus_first_result())
+        self.text_ref_entry.bind('<Escape>', lambda e: self._hide_search_results())
         
-        self.load_btn = tk.Button(
-            inner,
-            text="Load",
+        search_btn = tk.Button(
+            entry_frame,
+            text="Search",
             command=self._load_text,
             bg="#3B82F6",
             fg="white",
@@ -109,21 +149,153 @@ class TutorGUI:
             pady=8,
             cursor="hand2"
         )
-        self.load_btn.pack(side=tk.LEFT, padx=(0, 10))
+        search_btn.pack(side=tk.LEFT)
         
-        self.lang_btn = tk.Button(
-            inner,
-            text="EN",
-            command=self._toggle_language,
-            bg="#10B981",
-            fg="white",
-            font=("Arial", 10, "bold"),
-            relief=tk.FLAT,
-            padx=15,
-            pady=8,
-            cursor="hand2"
+        # Search results dropdown (initially hidden)
+        self.search_results_frame = None
+        self._search_timer = None
+    
+    def _create_popular_texts(self, parent):
+        """Create popular text quick access buttons."""
+        popular_frame = tk.Frame(parent, bg="#FFFFFF")
+        popular_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        tk.Label(
+            popular_frame,
+            text="Quick Access:",
+            font=("Arial", 9, "bold"),
+            bg="#FFFFFF",
+            fg="#6B7280"
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Get popular texts
+        popular_texts = self.sefaria_manager.get_popular_texts(limit=6)
+        
+        # Create button frame
+        btn_frame = tk.Frame(popular_frame, bg="#FFFFFF")
+        btn_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        for text in popular_texts:
+            btn = tk.Button(
+                btn_frame,
+                text=text['name'],
+                command=lambda t=text['name']: self._load_text_by_name(t),
+                bg="#EBF5FF",
+                fg="#1E40AF",
+                font=("Arial", 9),
+                relief=tk.FLAT,
+                padx=10,
+                pady=5,
+                cursor="hand2"
+            )
+            btn.pack(side=tk.LEFT, padx=3)
+    
+    def _on_search_keypress(self, event):
+        """Handle search box key press."""
+        query = self.text_ref_entry.get()
+        
+        if len(query) < 2:
+            self._hide_search_results()
+            return
+        
+        # Debounce search
+        if self._search_timer:
+            self.root.after_cancel(self._search_timer)
+        
+        self._search_timer = self.root.after(150, lambda: self._perform_search(query))
+    
+    def _perform_search(self, query):
+        """Perform search and show results."""
+        results = self.sefaria_manager.search_texts(query, limit=6)
+        self._show_search_results(results)
+    
+    def _show_search_results(self, results):
+        """Display search results dropdown."""
+        # Hide existing results
+        self._hide_search_results()
+        
+        if not results:
+            return
+        
+        # Create results frame
+        self.search_results_frame = tk.Frame(
+            self.text_ref_entry.master.master,
+            bg="#FFFFFF",
+            relief=tk.SOLID,
+            bd=1
         )
-        self.lang_btn.pack(side=tk.LEFT)
+        
+        # Position below search box
+        self.search_results_frame.place(
+            x=self.text_ref_entry.winfo_x() + self.text_ref_entry.master.winfo_x(),
+            y=self.text_ref_entry.winfo_y() + self.text_ref_entry.master.winfo_y() + 40,
+            width=self.text_ref_entry.winfo_width() + 110
+        )
+        
+        # Display results
+        for idx, result in enumerate(results):
+            result_frame = tk.Frame(self.search_results_frame, bg="#FFFFFF")
+            result_frame.pack(fill=tk.X, padx=2, pady=1)
+            
+            # Display text info
+            text_info = f"{result['name']}"
+            if result.get('hebrew_name'):
+                text_info += f" ({result['hebrew_name']})"
+            
+            label = tk.Label(
+                result_frame,
+                text=text_info,
+                font=("Arial", 10),
+                bg="#FFFFFF",
+                fg="#1F2937",
+                cursor="hand2",
+                anchor=tk.W,
+                padx=10,
+                pady=8
+            )
+            label.pack(fill=tk.X)
+            
+            # Bind click to load
+            label.bind('<Button-1>', lambda e, r=result['name']: self._load_text_by_search_result(r))
+            result_frame.bind('<Button-1>', lambda e, r=result['name']: self._load_text_by_search_result(r))
+            
+            # Hover effect
+            def on_enter(e, frame=result_frame):
+                frame.configure(bg="#EBF5FF")
+            def on_leave(e, frame=result_frame):
+                frame.configure(bg="#FFFFFF")
+            
+            label.bind('<Enter>', on_enter)
+            label.bind('<Leave>', on_leave)
+            result_frame.bind('<Enter>', on_enter)
+            result_frame.bind('<Leave>', on_leave)
+    
+    def _hide_search_results(self):
+        """Hide search results dropdown."""
+        if self.search_results_frame:
+            self.search_results_frame.destroy()
+            self.search_results_frame = None
+    
+    def _focus_first_result(self):
+        """Focus the first search result."""
+        # TODO: Implement keyboard navigation
+        pass
+    
+    def _load_text_by_name(self, text_name: str):
+        """Load text by catalog name."""
+        # Get reference from catalog
+        reference = self.sefaria_manager.load_text_by_name(text_name, self.current_text_language)
+        
+        if reference:
+            # Set in entry and load
+            self.text_ref_entry.delete(0, tk.END)
+            self.text_ref_entry.insert(0, reference)
+            self._load_text()
+    
+    def _load_text_by_search_result(self, text_name: str):
+        """Load text from search result click."""
+        self._hide_search_results()
+        self._load_text_by_name(text_name)
     
     def _create_text_display(self, parent):
         """Create source text display area."""
