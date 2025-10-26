@@ -11,6 +11,7 @@ from session import Session
 from storage import SessionStorage
 from sefaria_manager import SefariaManager
 from learning_features import LearningFeatures
+from progress_tracker import ProgressTracker
 
 # Phase 9: AI integration
 try:
@@ -41,6 +42,9 @@ class TutorApp:
         
         # Sefaria integration
         self.sefaria_manager = SefariaManager()
+        
+        # Progress tracking
+        self.progress_tracker = ProgressTracker()
         
         # AI tutor (Gemini)
         if GEMINI_AVAILABLE:
@@ -93,9 +97,14 @@ class TutorApp:
         
         # Save session
         session_id = self.storage.save_session(self.current_session)
+        
+        # Update progress tracker
+        self.progress_tracker.update_from_session(self.current_session)
+        
         print(f"✓ Session saved: {session_id}")
         print(f"  Duration: {self.current_session.duration:.1f}s")
         print(f"  AI Interactions: {self.current_session.get_ai_interaction_count()}")
+        print(f"  Concepts: {len(self.current_session.concepts_explored)}")
         
         ended_session = self.current_session
         self.current_session = None
@@ -249,4 +258,40 @@ class TutorApp:
             'total_duration_hours': total_duration / 3600,
             'avg_interactions_per_session': total_interactions / total_sessions if total_sessions > 0 else 0
         }
+    
+    def get_progress_stats(self) -> dict:
+        """
+        Get progress tracking statistics.
+        
+        Returns:
+            Dictionary with learning progress stats
+        """
+        return self.progress_tracker.get_stats_summary()
+    
+    def get_progress_recommendations(self) -> dict:
+        """
+        Get personalized study recommendations.
+        
+        Returns:
+            Dict with 'review', 'continue', 'explore' keys
+        """
+        return self.progress_tracker.get_recommendations()
+    
+    def get_concepts_for_review(self) -> list:
+        """
+        Get concepts that should be reviewed.
+        
+        Returns:
+            List of concept names
+        """
+        return self.progress_tracker.get_concepts_for_review()
+    
+    def export_progress_report(self) -> str:
+        """
+        Generate a formatted progress report.
+        
+        Returns:
+            Markdown-formatted progress report
+        """
+        return self.progress_tracker.export_progress_report()
 
