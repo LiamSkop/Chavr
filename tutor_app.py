@@ -10,6 +10,7 @@ from typing import Optional, Callable
 from session import Session
 from storage import SessionStorage
 from sefaria_manager import SefariaManager
+from learning_features import LearningFeatures
 
 # Phase 9: AI integration
 try:
@@ -145,6 +146,11 @@ class TutorApp:
             response = self.gemini_manager.ask_question(question)
             
             if response:
+                # Extract concepts from the response for learning tracking
+                concepts = LearningFeatures.extract_concepts(response, question)
+                for concept in concepts:
+                    self.current_session.add_concept(concept)
+                
                 # Save interaction to session
                 self.current_session.add_ai_interaction(question, response)
                 

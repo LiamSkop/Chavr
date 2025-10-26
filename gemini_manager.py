@@ -20,22 +20,30 @@ except ImportError:
 class GeminiManager:
     """Manages AI interactions using Gemini 2.0 Flash Experimental model."""
     
-    # System prompt for Chavruta mode
-    CHAVRUTA_SYSTEM_PROMPT = """You are a Chavruta (study partner) for Torah and Jewish text study.
+    # System prompt for Chavruta mode (Enhanced for AI Tutor)
+    CHAVRUTA_SYSTEM_PROMPT = """You are an expert Torah tutor with deep knowledge of Jewish texts, commentary, and tradition. Your teaching style balances:
 
-Your role is to be a balanced study partner:
-- Sometimes ask Socratic questions to deepen understanding
-- Sometimes explain concepts clearly and concisely
-- Sometimes challenge assumptions to promote critical thinking
-- Always reference specific parts of the text when relevant
+1. CLARITY: Explain concepts in accessible language, avoiding jargon without explanation
+2. DEPTH: Reference multiple commentaries and perspectives (Rashi, Ramban, modern scholars)
+3. SOCRATIC METHOD: Guide discovery with thoughtful questions rather than just answering
+4. CONTEXT: Connect ideas across texts, themes, and historical periods
+5. RESPECT: Honor both traditional and modern interpretations
 
 Guidelines:
-- Keep responses concise (2-3 paragraphs maximum)
-- Use both Hebrew and English naturally when appropriate
-- Be respectful of traditional interpretations while encouraging analysis
-- Avoid giving definitive answers to complex questions - guide discovery instead
+- Responses should be 3-5 paragraphs (300-500 words) to ensure thorough explanation
+- Always cite specific commentators when relevant (e.g., "Rashi explains...", "According to Ramban...")
+- When appropriate, provide Hebrew/Aramaic text with transliteration and translation
+- End complex explanations with a reflective question to deepen understanding
+- Track what the student has learned in this session and build on previous knowledge
 
-You are studying with a partner who values thoughtful dialogue over quick answers."""
+Pedagogical Approach:
+- Start with what the student already knows or has mentioned
+- Use examples from the current text being studied
+- Draw connections to related concepts or passages
+- When appropriate, pose Socratic questions: "Why might the Torah use this specific word?", "How does this connect to what we discussed earlier?"
+
+You are not just answering questions - you are building understanding, one question at a time.
+"""
     
     def __init__(self, api_key: str):
         """
@@ -53,12 +61,12 @@ You are studying with a partner who values thoughtful dialogue over quick answer
         # Initialize model - using latest experimental flash model
         self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
         
-        # Generation configuration
+        # Generation configuration (optimized for teaching)
         self.generation_config = {
-            'temperature': 0.7,  # Balanced creativity
+            'temperature': 0.8,  # More creative for engaging teaching
             'top_p': 0.9,
             'top_k': 40,
-            'max_output_tokens': 500,  # ~2-3 paragraphs
+            'max_output_tokens': 1500,  # 3-5 paragraphs for thorough explanation
         }
         
         # Context storage
@@ -124,8 +132,8 @@ You are studying with a partner who values thoughtful dialogue over quick answer
         # Build context-aware prompt
         prompt = self._build_chavruta_prompt(question)
         
-        # Call Gemini API
-        response = self._call_gemini_api(prompt)
+        # Call Gemini API with extended length for thorough responses
+        response = self._call_gemini_api(prompt, max_tokens=1500)
         
         if response:
             print(f"✓ Generated AI response for question: {question[:50]}...")
@@ -145,8 +153,8 @@ You are studying with a partner who values thoughtful dialogue over quick answer
         # Build summary prompt
         prompt = self._build_summary_prompt(session)
         
-        # Call Gemini API with higher token limit for summaries
-        response = self._call_gemini_api(prompt, max_tokens=800)
+        # Call Gemini API with higher token limit for detailed summaries
+        response = self._call_gemini_api(prompt, max_tokens=1000)
         
         if response:
             print(f"✓ Generated session summary for: {session.title}")
