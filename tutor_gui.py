@@ -23,17 +23,12 @@ class TutorGUI:
         self.root.configure(bg="#F5F5F5")
         
         # State management
-        self.current_session = None
         self.sefaria_manager = SefariaManager()
         self.current_text_content = None
         self.current_text_language = "en"
         
         # Initialize app
         self.app = TutorApp(question_callback=self._on_ai_response)
-        
-        # Start a session automatically
-        self.app.start_session()
-        self.current_session = self.app.current_session
         
         # Build UI
         self._setup_ui()
@@ -240,36 +235,8 @@ class TutorGUI:
     
     def _create_bottom_controls(self, parent):
         """Create bottom control buttons."""
-        controls = tk.Frame(parent, bg="#F5F5F5")
-        controls.pack(fill=tk.X)
-        
-        new_session_btn = tk.Button(
-            controls,
-            text="New Session",
-            command=self._new_session,
-            bg="#6B7280",
-            fg="white",
-            font=("Arial", 10, "bold"),
-            relief=tk.FLAT,
-            padx=20,
-            pady=8,
-            cursor="hand2"
-        )
-        new_session_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
-        generate_summary_btn = tk.Button(
-            controls,
-            text="Generate Summary",
-            command=self._generate_summary,
-            bg="#059669",
-            fg="white",
-            font=("Arial", 10, "bold"),
-            relief=tk.FLAT,
-            padx=20,
-            pady=8,
-            cursor="hand2"
-        )
-        generate_summary_btn.pack(side=tk.LEFT)
+        # No controls needed - stateless app
+        pass
     
     def _bind_shortcuts(self):
         """Bind keyboard shortcuts - simplified."""
@@ -560,40 +527,6 @@ class TutorGUI:
         """Callback for AI responses."""
         # This is called from the app when AI responds
         pass
-    
-    def _generate_summary(self):
-        """Generate session summary."""
-        if not self.app.current_session:
-            self._show_error("No active session")
-            return
-        
-        if self.app.current_session.get_ai_interaction_count() < 3:
-            self._show_error("Need at least 3 interactions to generate a summary")
-            return
-        
-        self._add_message("Generating summary...", "system")
-        
-        # End session to trigger summary
-        self.app.end_current_session()
-        
-        self._add_message("Session ended and summary generated!", "system")
-    
-    def _new_session(self):
-        """Start a new session."""
-        if self.app.current_session:
-            # End current session
-            self.app.end_current_session()
-        
-        # Start new session
-        self.app.start_session()
-        self.current_session = self.app.current_session
-        
-        # Clear chat
-        self.chat_display.config(state=tk.NORMAL)
-        self.chat_display.delete(1.0, tk.END)
-        self.chat_display.config(state=tk.DISABLED)
-        
-        self._add_message("Started new session", "system")
     
     def _add_message(self, text: str, sender: str):
         """Add a message to the chat display."""

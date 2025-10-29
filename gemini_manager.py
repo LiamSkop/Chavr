@@ -159,27 +159,6 @@ Stay concise. Don't over-explain.
         
         return response
     
-    def generate_session_summary(self, session) -> Optional[str]:
-        """
-        Generate summary of completed study session.
-        
-        Args:
-            session: Session object with AI interactions and metadata
-            
-        Returns:
-            str: Session summary or None if failed
-        """
-        # Build summary prompt
-        prompt = self._build_summary_prompt(session)
-        
-        # Call Gemini API with higher token limit for detailed summaries
-        response = self._call_gemini_api(prompt, max_tokens=1000)
-        
-        if response:
-            print(f"✓ Generated session summary for: {session.title}")
-        
-        return response
-    
     def _detect_question_type(self, question: str) -> str:
         """
         Detect question type to determine appropriate response length.
@@ -292,50 +271,6 @@ Stay concise. Don't over-explain.
             print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
             # Return minimal prompt if building fails
             return f"{self.CHAVRUTA_SYSTEM_PROMPT}\n\nStudent's Question: {question}\n\nResponse:"
-    
-    def _build_summary_prompt(self, session) -> str:
-        """
-        Build prompt for session summarization.
-        
-        Args:
-            session: Session object
-            
-        Returns:
-            str: Complete prompt for Gemini
-        """
-        summary_prompt = """Please analyze this study session and provide a concise summary.
-
-Include:
-1. Main topics or passages studied
-2. Key questions raised
-3. Notable insights or interpretations discussed
-4. Suggested areas for further exploration
-
-Keep the summary to 3-4 paragraphs maximum.
-
----
-
-"""
-        
-        # Add session metadata
-        summary_prompt += f"Study Session: {session.title}\n"
-        summary_prompt += f"Duration: {session.duration:.1f} seconds\n"
-        
-        # Add Sefaria text if present
-        if session.has_sefaria_text():
-            text_info = session.get_sefaria_text_info()
-            summary_prompt += f"Text Studied: {text_info['reference']}\n\n"
-        
-        # Add AI interactions
-        summary_prompt += "Questions and Answers:\n"
-        for interaction in session.ai_interactions:
-            timestamp = interaction.get('timestamp', 'N/A')
-            summary_prompt += f"Q: {interaction['question']}\n"
-            summary_prompt += f"A: {interaction['response']}\n\n"
-        
-        summary_prompt += "---\n\nSummary:"
-        
-        return summary_prompt
     
     def _call_gemini_api(self, prompt: str, max_tokens: int = 500) -> Optional[str]:
         """
