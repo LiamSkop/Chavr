@@ -135,12 +135,19 @@ class TutorApp:
                 text_info = self.current_session.sefaria_text
                 context_transcripts.append({
                     'text': f"Current text: {text_info.get('reference', 'Unknown')}",
+                    'language': text_info.get('language', 'en'),
                     'timestamp': text_info.get('loaded_at', datetime.now().isoformat())
                 })
             
-            # Add recent AI interactions for context
+            # Add recent AI interactions for context (convert to transcript format)
             for interaction in self.current_session.ai_interactions[-5:]:  # Last 5 interactions
-                context_transcripts.append(interaction)
+                # Convert AI interaction to transcript format
+                qa_text = f"Q: {interaction.get('question', '')}\nA: {interaction.get('response', '')}"
+                context_transcripts.append({
+                    'text': qa_text,
+                    'language': 'en',  # Default for Q&A (can be enhanced later)
+                    'timestamp': interaction.get('timestamp', datetime.now().isoformat())
+                })
             
             # Set context in AI manager
             self.gemini_manager.add_transcript_context(context_transcripts)
@@ -169,9 +176,17 @@ class TutorApp:
                 
                 return response
             
+        except KeyError as e:
+            error_msg = f"Missing key in data structure: {str(e)}"
+            print(f"⚠ {error_msg}")
+            import traceback
+            print(f"Traceback:\n{traceback.format_exc()}")
+            return error_msg
         except Exception as e:
             error_msg = f"AI error: {str(e)}"
             print(f"⚠ {error_msg}")
+            import traceback
+            print(f"Traceback:\n{traceback.format_exc()}")
             return error_msg
         
         return "No response from AI tutor."

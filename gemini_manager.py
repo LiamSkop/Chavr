@@ -171,31 +171,58 @@ You are not just answering questions - you are building understanding, one quest
         Returns:
             str: Complete prompt for Gemini
         """
-        prompt_parts = [self.CHAVRUTA_SYSTEM_PROMPT, "\n\n"]
+        import traceback
         
-        # Add Sefaria text context if available
-        if self.current_sefaria_text:
-            ref = self.current_sefaria_text['reference']
-            content = self.current_sefaria_text['content']
-            lang = self.current_sefaria_text['language']
+        try:
+            prompt_parts = [self.CHAVRUTA_SYSTEM_PROMPT, "\n\n"]
             
-            prompt_parts.append(f"Current Text Being Studied:\n")
-            prompt_parts.append(f"Reference: {ref}\n")
-            prompt_parts.append(f"Language: {lang}\n")
-            prompt_parts.append(f"Text:\n{content}\n\n")
-        
-        # Add recent conversation context
-        if self.recent_transcripts:
-            prompt_parts.append("Recent Conversation:\n")
-            for t in self.recent_transcripts[-5:]:  # Last 5 only
-                prompt_parts.append(f"[{t['language']}] {t['text']}\n")
-            prompt_parts.append("\n")
-        
-        # Add the question
-        prompt_parts.append(f"Student's Question: {question}\n\n")
-        prompt_parts.append("Response:")
-        
-        return "".join(prompt_parts)
+            # Add Sefaria text context if available
+            if self.current_sefaria_text:
+                try:
+                    ref = self.current_sefaria_text.get('reference', 'Unknown')
+                    content = self.current_sefaria_text.get('content', '')
+                    lang = self.current_sefaria_text.get('language', 'en')
+                    
+                    print(f"DEBUG: Adding Sefaria context - ref={ref}, lang={lang}, content_len={len(content)}")
+                    
+                    prompt_parts.append(f"Current Text Being Studied:\n")
+                    prompt_parts.append(f"Reference: {ref}\n")
+                    prompt_parts.append(f"Language: {lang}\n")
+                    prompt_parts.append(f"Text:\n{content}\n\n")
+                except Exception as e:
+                    print(f"⚠ Error building Sefaria context: {e}")
+                    print(f"DEBUG: current_sefaria_text keys: {list(self.current_sefaria_text.keys()) if isinstance(self.current_sefaria_text, dict) else 'not a dict'}")
+                    print(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+            
+            # Add recent conversation context
+            if self.recent_transcripts:
+                try:
+                    prompt_parts.append("Recent Conversation:\n")
+                    for idx, t in enumerate(self.recent_transcripts[-5:]):  # Last 5 only
+                        # Handle both transcript format and interaction format
+                        lang = t.get('language', 'en')  # Default to 'en' if missing
+                        text = t.get('text', str(t))  # Fallback to string representation
+                        prompt_parts.append(f"[{lang}] {text}\n")
+                    prompt_parts.append("\n")
+                except Exception as e:
+                    print(f"⚠ Error building conversation context: {e}")
+                    print(f"DEBUG: recent_transcripts count: {len(self.recent_transcripts)}")
+                    print(f"DEBUG: First transcript keys: {list(self.recent_transcripts[0].keys()) if self.recent_transcripts and isinstance(self.recent_transcripts[0], dict) else 'not a dict'}")
+                    print(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+            
+            # Add the question
+            prompt_parts.append(f"Student's Question: {question}\n\n")
+            prompt_parts.append("Response:")
+            
+            result = "".join(prompt_parts)
+            print(f"DEBUG: Built prompt ({len(result)} chars)")
+            return result
+            
+        except Exception as e:
+            print(f"✗ Error building prompt: {e}")
+            print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
+            # Return minimal prompt if building fails
+            return f"{self.CHAVRUTA_SYSTEM_PROMPT}\n\nStudent's Question: {question}\n\nResponse:"
     
     def _build_summary_prompt(self, session) -> str:
         """
@@ -252,10 +279,14 @@ Keep the summary to 3-4 paragraphs maximum.
         Returns:
             str: AI response or None if failed
         """
+        import traceback
+        
         try:
             # Update generation config with token limit
             config = self.generation_config.copy()
             config['max_output_tokens'] = max_tokens
+            
+            print(f"DEBUG: Calling Gemini API with {len(prompt)} chars, max_tokens={max_tokens}")
             
             response = self.model.generate_content(
                 prompt,
@@ -263,15 +294,27 @@ Keep the summary to 3-4 paragraphs maximum.
             )
             
             if response and response.text:
+                print(f"DEBUG: Gemini response received ({len(response.text)} chars)")
                 return response.text.strip()
             else:
                 print("⚠ Gemini returned empty response")
+                print(f"DEBUG: Response object: {response}")
                 if self.error_callback:
                     self.error_callback("AI returned empty response")
                 return None
                 
+        except KeyError as e:
+            error_msg = f"KeyError accessing response: {str(e)}"
+            print(f"✗ {error_msg}")
+            print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
+            if self.error_callback:
+                self.error_callback(f"Data structure error: {error_msg}")
+            return None
         except Exception as e:
             error_msg = str(e)
+            
+            print(f"✗ Gemini API error: {error_msg}")
+            print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
             
             # Handle specific errors
             if "API_KEY" in error_msg.upper():
@@ -287,7 +330,6 @@ Keep the summary to 3-4 paragraphs maximum.
                 if self.error_callback:
                     self.error_callback("API quota exceeded. Please check your billing.")
             else:
-                print(f"✗ Gemini API error: {error_msg}")
                 if self.error_callback:
                     self.error_callback(f"AI error: {error_msg[:100]}")
             
