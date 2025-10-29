@@ -5,8 +5,10 @@ Stateless Q&A focused on text learning and AI interactions.
 """
 
 import os
+import json
 from datetime import datetime
 from typing import Optional, Callable, Dict, List, Any
+from pathlib import Path
 
 from sefaria_manager import SefariaManager
 
@@ -42,6 +44,10 @@ class TutorApp:
         
         # Sefaria integration
         self.sefaria_manager = SefariaManager()
+        
+        # Cache directory for challenging terms
+        self.cache_dir = Path("sefaria_cache")
+        self.cache_dir.mkdir(exist_ok=True)
         
         # AI tutor (Gemini)
         if GEMINI_AVAILABLE:
@@ -149,17 +155,26 @@ class TutorApp:
                 # Extract text content
                 text_content = self.sefaria_manager.extract_text_content(data)
                 
+                # Check for cached challenging terms
+                challenging_terms = self._load_cached_terms(reference, language)
+                
                 # Store in memory
                 self.current_text = {
                     'reference': reference,
                     'content': text_content,
                     'language': language,
+                    'challenging_terms': challenging_terms,
                     'loaded_at': datetime.now().isoformat()
                 }
                 
                 # Update AI context
                 if self.gemini_manager:
                     self.gemini_manager.set_sefaria_context(reference, text_content, language)
+                
+                # Extract challenging terms in background (if not cached)
+                if not challenging_terms and self.gemini_manager:
+                    # Extract terms asynchronously (will update current_text when done)
+                    self._extract_terms_async(reference, text_content, language)
                 
                 print(f"✓ Loaded text: {reference} ({language})")
                 return True
@@ -182,3 +197,86 @@ class TutorApp:
         if not self.current_text:
             return None
         return self.current_text.get('reference')
+    
+    def _load_cached_terms(self, reference: str, language: str) -> Optional[List[Dict[str, str]]]:
+        """Load cached challenging terms for a reference."""
+        cache_filename = self._get_terms_cache_filename(reference, language)
+        
+        if cache_filename.exists():
+            try:
+                with open(cache_filename, 'r', encoding='utf-8') as f:
+                    cached_data = json.load(f)
+                    
+                # Validate cached data
+                if isinstance(cached_data, list):
+                    print(f"✓ Loaded {len(cached_data)} cached challenging terms for {reference}")
+                    return cached_data
+            except Exception as e:
+                print(f"⚠ Error loading cached terms: {e}")
+        
+        return None
+    
+    def _save_cached_terms(self, reference: str, language: str, terms: List[Dict[str, str]]):
+        """Save challenging terms to cache."""
+        cache_filename = self._get_terms_cache_filename(reference, language)
+        
+        try:
+            with open(cache_filename, 'w', encoding='utf-8') as f:
+                json.dump(terms, f, indent=2, ensure_ascii=False)
+            print(f"✓ Cached {len(terms)} challenging terms for {reference}")
+        except Exception as e:
+            print(f"⚠ Error saving cached terms: {e}")
+    
+    def _get_terms_cache_filename(self, reference: str, language: str) -> Path:
+        """Get cache filename for challenging terms."""
+        import re
+        # Sanitize reference for filename
+        sanitized = re.sub(r'[^\w\s-]', '', reference)
+        sanitized = re.sub(r'[-\s]+', '_', sanitized)
+        filename = f"{sanitized.lower()}_{language}_terms.json"
+        return self.cache_dir / filename
+    
+    def _extract_terms_async(self, reference: str, text_content: str, language: str):
+        """Extract challenging terms asynchronously and update current_text."""
+        import threading
+        
+        def extract_and_update():
+            try:
+                terms = self.gemini_manager.extract_challenging_terms(text_content, reference, language)
+                
+                if terms:
+                    # Update current_text with extracted terms
+                    if self.current_text and self.current_text.get('reference') == reference:
+                        self.current_text['challenging_terms'] = terms
+                        
+                        # Save to cache
+                        self._save_cached_terms(reference, language, terms)
+                        
+                        # Notify GUI if callback available
+                        if self.question_callback:
+                            # Use a special signal to indicate terms are ready
+                            self.question_callback('terms_ready', {'terms': terms, 'reference': reference}, datetime.now())
+            except Exception as e:
+                print(f"⚠ Error extracting terms async: {e}")
+        
+        # Start extraction in background thread
+        thread = threading.Thread(target=extract_and_update, daemon=True)
+        thread.start()
+    
+    def get_challenging_terms(self) -> Optional[List[Dict[str, str]]]:
+        """Get challenging terms for current text."""
+        if not self.current_text:
+            return None
+        return self.current_text.get('challenging_terms')
+    
+    def get_term_explanation(self, term: str) -> Optional[str]:
+        """Get explanation for a specific term."""
+        terms = self.get_challenging_terms()
+        if not terms:
+            return None
+        
+        for t in terms:
+            if t.get('term', '').lower() == term.lower():
+                return t.get('explanation')
+        
+        return None

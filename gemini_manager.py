@@ -8,6 +8,8 @@ Free tier: 10,000 requests/minute, 10M tokens/minute.
 import os
 import google.generativeai as genai
 from typing import Dict, List, Optional, Callable, Any
+import json
+import re
 from datetime import datetime
 
 # Load environment variables from .env file
@@ -158,6 +160,125 @@ Stay concise. Don't over-explain.
             print(f"✓ Generated AI response ({question_type}) for question: {question[:50]}...")
         
         return response
+    
+    def extract_challenging_terms(self, text_content: str, reference: str, language: str) -> Optional[List[Dict[str, str]]]:
+        """
+        Use AI to identify challenging terms and provide brief explanations.
+        Optimized for speed with simple prompt and flexible parsing.
+        
+        Args:
+            text_content: The text content to analyze
+            reference: Text reference (e.g., "Genesis 1:1")
+            language: Language code ('en' or 'he')
+            
+        Returns:
+            List of term dicts with 'term', 'explanation', 'context' keys
+            Returns None if extraction fails
+        """
+        if not self.model:
+            return None
+        
+        # Truncate text to 1000 chars for faster processing
+        analysis_text = text_content[:1000] if len(text_content) > 1000 else text_content
+        
+        # Skip if text is too short
+        if len(analysis_text.strip()) < 50:
+            return []
+        
+        # Simple, concise prompt (matches manual query style)
+        prompt = f"""What are the most challenging or difficult terms in this text for a yeshivish learner?
+
+Text:
+{analysis_text}
+
+List 5-8 terms with brief explanations (1 sentence each). Format as: Term: Explanation"""
+        
+        try:
+            # Reduced token limit for faster response
+            response = self._call_gemini_api(prompt, max_tokens=400)
+            
+            if not response:
+                return None
+            
+            # Parse flexible format (natural language or structured)
+            terms = self._parse_terms_response(response)
+            
+            if terms:
+                print(f"✓ Extracted {len(terms)} challenging terms from {reference}")
+            else:
+                print(f"⚠ No terms extracted from {reference}")
+            
+            return terms
+            
+        except Exception as e:
+            print(f"⚠ Error extracting challenging terms: {e}")
+            import traceback
+            print(f"Traceback:\n{traceback.format_exc()}")
+            return None
+    
+    def _parse_terms_response(self, response: str) -> List[Dict[str, str]]:
+        """
+        Parse terms from flexible response format.
+        Handles various formats: "Term: Explanation", numbered lists, natural language, etc.
+        """
+        terms = []
+        lines = response.strip().split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Skip header lines
+            if any(skip in line.lower() for skip in ['challenging', 'difficult', 'terms', 'here are', 'the most']):
+                if ':' not in line:
+                    continue  # Skip header-only lines
+            
+            # Look for "Term: Explanation" pattern
+            if ':' in line:
+                # Split on first colon
+                parts = line.split(':', 1)
+                if len(parts) == 2:
+                    term = parts[0].strip()
+                    explanation = parts[1].strip()
+                    
+                    # Clean up term (remove numbering, bullets, dashes, etc.)
+                    term = re.sub(r'^[\d\-•\.\)\s\[\]]+', '', term).strip()
+                    
+                    # Skip if term is too short or looks like a header
+                    if len(term) < 2 or term.lower() in ['term', 'terms', 'challenging', 'difficult']:
+                        continue
+                    
+                    if term and explanation:
+                        terms.append({
+                            'term': term,
+                            'explanation': explanation,
+                            'context': ''  # Context removed for speed
+                        })
+        
+        # Also try JSON parsing as fallback (some LLMs still return JSON)
+        if not terms:
+            try:
+                json_match = re.search(r'\[.*\]', response, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    parsed = json.loads(json_str)
+                    if isinstance(parsed, list):
+                        for item in parsed:
+                            if isinstance(item, dict):
+                                term = item.get('term', '')
+                                explanation = item.get('explanation', '')
+                                if term and explanation:
+                                    terms.append({
+                                        'term': str(term),
+                                        'explanation': str(explanation),
+                                        'context': ''
+                                    })
+            except (json.JSONDecodeError, Exception):
+                pass  # Ignore JSON parsing errors, use line-by-line parsing
+        
+        # Limit to 8 terms max
+        return terms[:8]
     
     def _detect_question_type(self, question: str) -> str:
         """
