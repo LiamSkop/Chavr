@@ -1,0 +1,21 @@
+{
+  "accesses": [
+    {
+      "text": "Chayei Adam 13",
+      "timestamp": "2025-10-29T23:07:36.628469"
+    },
+    {
+      "text": "Genesis 2",
+      "timestamp": "2025-10-29T23:08:31.139291"
+    },
+    {
+      "text": "Pirkei Avot 1",
+      "timestamp": "2025-10-29T23:13:25.146025"
+    }
+  ],
+  "popularity": {
+    "Chayei Adam 13": 1,
+    "Genesis 2": 1,
+    "Pirkei Avot 1": 1
+  }
+}

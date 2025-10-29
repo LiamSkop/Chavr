@@ -26,6 +26,7 @@ class TutorGUI:
         self.sefaria_manager = SefariaManager()
         self.current_text_content = None
         self.current_text_language = "en"
+        self._terms_extracting = False
         
         # Initialize app
         self.app = TutorApp(question_callback=self._on_ai_response)
@@ -47,6 +48,9 @@ class TutorGUI:
         
         # Text reference section (minimal - just for context)
         self._create_text_reference_section(main_frame)
+        
+        # Challenging terms section (expandable)
+        self._create_challenging_terms_section(main_frame)
         
         # Large question input (60% of screen)
         self._create_question_section(main_frame)
@@ -232,6 +236,177 @@ class TutorGUI:
         self.chat_display.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
         self.chat_display.config(state=tk.DISABLED)
     
+    def _create_challenging_terms_section(self, parent):
+        """Create expandable section for challenging terms."""
+        # Main container frame
+        self.terms_frame = tk.Frame(parent, bg="#FFFFFF", relief=tk.SOLID, bd=1)
+        self.terms_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Header with toggle button
+        header_frame = tk.Frame(self.terms_frame, bg="#FFFFFF", padx=15, pady=10)
+        header_frame.pack(fill=tk.X)
+        
+        self.terms_toggle_btn = tk.Button(
+            header_frame,
+            text="▼ Challenging Terms",
+            command=self._toggle_terms_panel,
+            bg="#10B981",
+            fg="white",
+            font=("Arial", 10, "bold"),
+            relief=tk.FLAT,
+            padx=15,
+            pady=5,
+            cursor="hand2",
+            anchor="w"
+        )
+        self.terms_toggle_btn.pack(side=tk.LEFT)
+        
+        # Loading indicator (initially hidden)
+        self.terms_loading_label = tk.Label(
+            header_frame,
+            text="Analyzing text...",
+            font=("Arial", 9),
+            bg="#FFFFFF",
+            fg="#6B7280"
+        )
+        
+        # Terms content frame (initially collapsed)
+        self.terms_content_frame = tk.Frame(self.terms_frame, bg="#FFFFFF")
+        self.terms_content_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
+        
+        # Scrollable frame for terms list
+        terms_canvas = tk.Canvas(self.terms_content_frame, bg="#F9FAFB", highlightthickness=0)
+        scrollbar = tk.Scrollbar(self.terms_content_frame, orient="vertical", command=terms_canvas.yview)
+        self.terms_scrollable_frame = tk.Frame(terms_canvas, bg="#F9FAFB")
+        
+        self.terms_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: terms_canvas.configure(scrollregion=terms_canvas.bbox("all"))
+        )
+        
+        terms_canvas.create_window((0, 0), window=self.terms_scrollable_frame, anchor="nw")
+        terms_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        terms_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.terms_canvas = terms_canvas
+        
+        # Initially hide content
+        self.terms_expanded = False
+        self.terms_content_frame.pack_forget()
+    
+    def _toggle_terms_panel(self):
+        """Toggle the challenging terms panel."""
+        self.terms_expanded = not self.terms_expanded
+        
+        if self.terms_expanded:
+            self.terms_content_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
+            self.terms_toggle_btn.config(text="▲ Challenging Terms")
+            self._refresh_terms_display()
+        else:
+            self.terms_content_frame.pack_forget()
+            self.terms_toggle_btn.config(text="▼ Challenging Terms")
+    
+    def _refresh_terms_display(self):
+        """Refresh the display of challenging terms."""
+        # Clear existing terms
+        for widget in self.terms_scrollable_frame.winfo_children():
+            widget.destroy()
+        
+        terms = self.app.get_challenging_terms()
+        
+        if not terms:
+            # Show loading or empty state
+            if hasattr(self, '_terms_extracting') and self._terms_extracting:
+                tk.Label(
+                    self.terms_scrollable_frame,
+                    text="Analyzing text for challenging terms...",
+                    font=("Arial", 10),
+                    bg="#F9FAFB",
+                    fg="#6B7280",
+                    pady=20
+                ).pack()
+            else:
+                tk.Label(
+                    self.terms_scrollable_frame,
+                    text="No challenging terms identified yet.",
+                    font=("Arial", 10),
+                    bg="#F9FAFB",
+                    fg="#6B7280",
+                    pady=20
+                ).pack()
+            return
+        
+        # Display terms
+        for idx, term_data in enumerate(terms):
+            term = term_data.get('term', '')
+            explanation = term_data.get('explanation', '')
+            context = term_data.get('context', '')
+            
+            # Term frame
+            term_frame = tk.Frame(self.terms_scrollable_frame, bg="#FFFFFF", relief=tk.SOLID, bd=1)
+            term_frame.pack(fill=tk.X, padx=5, pady=5)
+            
+            # Term name (bold)
+            term_label = tk.Label(
+                term_frame,
+                text=term,
+                font=("Arial", 11, "bold"),
+                bg="#FFFFFF",
+                fg="#1F2937",
+                anchor="w"
+            )
+            term_label.pack(fill=tk.X, padx=10, pady=(10, 5))
+            
+            # Explanation
+            explanation_label = tk.Label(
+                term_frame,
+                text=explanation,
+                font=("Arial", 10),
+                bg="#FFFFFF",
+                fg="#374151",
+                anchor="w",
+                wraplength=600,
+                justify="left"
+            )
+            explanation_label.pack(fill=tk.X, padx=10, pady=(0, 5))
+            
+            # Context (if available)
+            if context:
+                context_label = tk.Label(
+                    term_frame,
+                    text=f"Context: {context}",
+                    font=("Arial", 9, "italic"),
+                    bg="#FFFFFF",
+                    fg="#6B7280",
+                    anchor="w",
+                    wraplength=600,
+                    justify="left"
+                )
+                context_label.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        # Update scroll region
+        self.terms_scrollable_frame.update_idletasks()
+        self.terms_canvas.configure(scrollregion=self.terms_canvas.bbox("all"))
+    
+    def _update_terms_display(self, terms_data):
+        """Update terms display when extraction completes."""
+        terms = terms_data.get('terms', [])
+        reference = terms_data.get('reference', '')
+        
+        # Hide loading indicator
+        self.terms_loading_label.pack_forget()
+        self._terms_extracting = False
+        
+        # Refresh display if panel is expanded
+        if self.terms_expanded:
+            self._refresh_terms_display()
+        
+        # Update button text to show count
+        if terms:
+            self.terms_toggle_btn.config(text=f"▼ Challenging Terms ({len(terms)})")
+    
     
     def _create_bottom_controls(self, parent):
         """Create bottom control buttons."""
@@ -282,6 +457,16 @@ class TutorGUI:
             # Enable navigation buttons
             self.prev_btn.config(state=tk.NORMAL)
             self.next_btn.config(state=tk.NORMAL)
+            
+            # Check if terms are being extracted
+            terms = self.app.get_challenging_terms()
+            if not terms:
+                # Show loading indicator
+                self.terms_loading_label.pack(side=tk.LEFT, padx=(10, 0))
+                self._terms_extracting = True
+            else:
+                # Update button with count
+                self.terms_toggle_btn.config(text=f"▼ Challenging Terms ({len(terms)})")
             
             self._add_message(f"Studying: {reference} ({language})", "system")
             return True
@@ -524,9 +709,11 @@ class TutorGUI:
             self._add_message("No response from AI tutor.", "error")
     
     def _on_ai_response(self, sender, response, timestamp):
-        """Callback for AI responses."""
-        # This is called from the app when AI responds
-        pass
+        """Callback for AI responses and other events."""
+        # Handle terms ready signal
+        if sender == 'terms_ready':
+            self._update_terms_display(response)
+        # Regular AI responses are handled in _send_message
     
     def _add_message(self, text: str, sender: str):
         """Add a message to the chat display."""
