@@ -10,8 +10,9 @@ import requests
 import threading
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, Optional, Tuple, Callable
+from typing import Dict, Any, Optional, Tuple, Callable, List
 import re
+from text_catalog import TextCatalog, TextEntry
 
 
 class SefariaManager:
@@ -36,6 +37,9 @@ class SefariaManager:
         
         # Error handling
         self.error_callback: Optional[Callable[[str], None]] = None
+        
+        # Text catalog for smart search
+        self.text_catalog = TextCatalog()
         
         print(f"✓ SefariaManager initialized with cache directory: {self.cache_dir}")
     
@@ -226,6 +230,8 @@ class SefariaManager:
         # Cache successful responses
         if text_data:
             self._save_to_cache(reference, language, text_data)
+            # Record text access for recent/popular tracking
+            self.text_catalog.record_text_access(reference)
             return text_data
         
         return None
@@ -348,6 +354,172 @@ class SefariaManager:
         
         print(f"✓ Cleared {deleted_count} cached texts")
         return deleted_count
+    
+    def search_texts(self, query: str, limit: int = 10) -> List[Dict]:
+        """
+        Smart search for texts using TextCatalog.
+        
+        Args:
+            query: Search query
+            limit: Maximum number of results
+            
+        Returns:
+            List of text dictionaries with metadata
+        """
+        results = self.text_catalog.search(query, limit=limit)
+        
+        # Convert to dictionary format
+        return [
+            {
+                'name': entry.name,
+                'hebrew_name': entry.hebrew_name,
+                'category': entry.category,
+                'subcategory': entry.subcategory,
+                'description': entry.description,
+                'popularity': entry.popularity,
+                'tags': entry.tags,
+                'score': score
+            }
+            for entry, score in results
+        ]
+    
+    def get_popular_texts(self, limit: int = 10) -> List[Dict]:
+        """
+        Get most popular texts.
+        
+        Args:
+            limit: Maximum number of results
+            
+        Returns:
+            List of popular text dictionaries
+        """
+        results = self.text_catalog.get_popular_entries(limit=limit)
+        
+        return [
+            {
+                'name': entry.name,
+                'hebrew_name': entry.hebrew_name,
+                'category': entry.category,
+                'description': entry.description,
+                'popularity': entry.popularity,
+                'tags': entry.tags
+            }
+            for entry, score in results
+        ]
+    
+    def get_recent_texts(self, limit: int = 10) -> List[Dict]:
+        """
+        Get recently accessed texts.
+        
+        Args:
+            limit: Maximum number of results
+            
+        Returns:
+            List of recent text dictionaries
+        """
+        entries = self.text_catalog.get_recent_entries(limit=limit)
+        
+        return [
+            {
+                'name': entry.name,
+                'hebrew_name': entry.hebrew_name,
+                'category': entry.category,
+                'description': entry.description
+            }
+            for entry in entries
+        ]
+    
+    def get_categories(self) -> Dict[str, List[Dict]]:
+        """
+        Get texts organized by category.
+        
+        Returns:
+            Dict mapping category names to lists of text dictionaries
+        """
+        by_category = self.text_catalog.get_by_category()
+        
+        return {
+            category: [
+                {
+                    'name': entry.name,
+                    'hebrew_name': entry.hebrew_name,
+                    'description': entry.description,
+                    'popularity': entry.popularity
+                }
+                for entry in entries
+            ]
+            for category, entries in by_category.items()
+        }
+    
+    def load_text_by_name(self, text_name: str, language: str = "en") -> Optional[str]:
+        """
+        Load text using catalog entry name instead of exact reference.
+        
+        Args:
+            text_name: Name of text from catalog
+            language: 'en' or 'he'
+            
+        Returns:
+            Sample reference string or None
+        """
+        entry = self.text_catalog.get_entry_by_name(text_name)
+        
+        if not entry:
+            return None
+        
+        # Return first sample reference
+        if entry.sample_references:
+            return entry.sample_references[0]
+        
+        # Fallback to name
+        return entry.name
+    
+    def extract_text_content(self, data: Dict[str, Any]) -> str:
+        """
+        Extract plain text content from Sefaria API response.
+        
+        Args:
+            data: Sefaria API response dictionary
+            
+        Returns:
+            Extracted text content as string
+        """
+        if not data:
+            return ""
+        
+        # Handle different response formats from Sefaria
+        text_parts = []
+        
+        def extract_text_helper(obj):
+            """Recursively extract text from nested structure."""
+            if isinstance(obj, str):
+                # Remove HTML tags
+                import re
+                clean_text = re.sub(r'<[^>]+>', '', obj)
+                if clean_text.strip():
+                    text_parts.append(clean_text.strip())
+            elif isinstance(obj, dict):
+                # Check for 'he' or 'text' keys
+                if 'he' in obj:
+                    extract_text_helper(obj['he'])
+                elif 'text' in obj:
+                    extract_text_helper(obj['text'])
+                # Recurse through all values
+                for value in obj.values():
+                    extract_text_helper(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    extract_text_helper(item)
+        
+        extract_text_helper(data)
+        
+        # Join all text parts with paragraph breaks
+        result = "\n\n".join(text_parts)
+        
+        # Clean up extra whitespace
+        result = re.sub(r'\n{3,}', '\n\n', result)
+        
+        return result
     
     def search_text_names(self, query: str, limit: int = 10) -> list:
         """
