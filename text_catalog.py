@@ -210,7 +210,7 @@ class TextCatalog:
         self.progress_tracker = progress_tracker
         
         # User access tracking (for recent/popular)
-        self.access_history_file = Path("sessions/text_access_history.json")
+        self.access_history_file = Path("text_access_history.json")
         self.access_history = self._load_access_history()
     
     def _load_access_history(self) -> Dict:

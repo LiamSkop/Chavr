@@ -23,17 +23,12 @@ class TutorGUI:
         self.root.configure(bg="#F5F5F5")
         
         # State management
-        self.current_session = None
         self.sefaria_manager = SefariaManager()
         self.current_text_content = None
         self.current_text_language = "en"
         
         # Initialize app
         self.app = TutorApp(question_callback=self._on_ai_response)
-        
-        # Start a session automatically
-        self.app.start_session()
-        self.current_session = self.app.current_session
         
         # Build UI
         self._setup_ui()
@@ -42,7 +37,7 @@ class TutorGUI:
         self._bind_shortcuts()
     
     def _setup_ui(self):
-        """Setup the main UI layout."""
+        """Setup the main UI layout - streamlined Q&A focus."""
         # Main container
         main_frame = tk.Frame(self.root, bg="#F5F5F5")
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
@@ -50,14 +45,14 @@ class TutorGUI:
         # Header
         self._create_header(main_frame)
         
-        # Text input section
-        self._create_text_input_section(main_frame)
+        # Text reference section (minimal - just for context)
+        self._create_text_reference_section(main_frame)
         
-        # Text display (50% of screen)
-        self._create_text_display(main_frame)
+        # Large question input (60% of screen)
+        self._create_question_section(main_frame)
         
-        # Chat section (40% of screen)
-        self._create_chat_section(main_frame)
+        # AI response display (40% of screen)
+        self._create_response_section(main_frame)
         
         # Bottom controls
         self._create_bottom_controls(main_frame)
@@ -77,26 +72,90 @@ class TutorGUI:
         )
         title.pack()
     
-    def _create_text_input_section(self, parent):
-        """Create smart text finder interface."""
-        finder_frame = tk.Frame(parent, bg="#FFFFFF", relief=tk.SOLID, bd=1)
-        finder_frame.pack(fill=tk.X, pady=(0, 15))
+    def _create_text_reference_section(self, parent):
+        """Create compact text reference selector with navigation."""
+        ref_frame = tk.Frame(parent, bg="#FFFFFF", relief=tk.SOLID, bd=1)
+        ref_frame.pack(fill=tk.X, pady=(0, 15))
         
-        inner = tk.Frame(finder_frame, bg="#FFFFFF", padx=15, pady=15)
-        inner.pack(fill=tk.BOTH, expand=True)
+        inner = tk.Frame(ref_frame, bg="#FFFFFF", padx=15, pady=12)
+        inner.pack(fill=tk.X)
         
-        # Search box
-        self._create_search_box(inner)
+        # Left side: Reference display and navigation
+        left_frame = tk.Frame(inner, bg="#FFFFFF")
+        left_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        # Popular texts quick access
-        self._create_popular_texts(inner)
+        tk.Label(
+            left_frame,
+            text="Studying:",
+            font=("Arial", 10, "bold"),
+            bg="#FFFFFF",
+            fg="#374151"
+        ).pack(side=tk.LEFT, padx=(0, 8))
         
-        # Language toggle
-        lang_frame = tk.Frame(inner, bg="#FFFFFF")
-        lang_frame.pack(anchor=tk.E, pady=(5, 0))
+        # Current reference display
+        self.current_ref_label = tk.Label(
+            left_frame,
+            text="No text selected",
+            font=("Arial", 11),
+            bg="#FFFFFF",
+            fg="#1F2937"
+        )
+        self.current_ref_label.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Navigation buttons
+        nav_frame = tk.Frame(left_frame, bg="#FFFFFF")
+        nav_frame.pack(side=tk.LEFT)
+        
+        self.prev_btn = tk.Button(
+            nav_frame,
+            text="◀ Previous",
+            command=self._previous_chapter,
+            bg="#E5E7EB",
+            fg="#374151",
+            font=("Arial", 9),
+            relief=tk.FLAT,
+            padx=12,
+            pady=5,
+            cursor="hand2",
+            state=tk.DISABLED
+        )
+        self.prev_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.next_btn = tk.Button(
+            nav_frame,
+            text="Next ▶",
+            command=self._next_chapter,
+            bg="#E5E7EB",
+            fg="#374151",
+            font=("Arial", 9),
+            relief=tk.FLAT,
+            padx=12,
+            pady=5,
+            cursor="hand2",
+            state=tk.DISABLED
+        )
+        self.next_btn.pack(side=tk.LEFT)
+        
+        # Right side: Change text button and language toggle
+        right_frame = tk.Frame(inner, bg="#FFFFFF")
+        right_frame.pack(side=tk.RIGHT)
+        
+        change_btn = tk.Button(
+            right_frame,
+            text="Change Text",
+            command=self._show_text_selector,
+            bg="#3B82F6",
+            fg="white",
+            font=("Arial", 9, "bold"),
+            relief=tk.FLAT,
+            padx=15,
+            pady=5,
+            cursor="hand2"
+        )
+        change_btn.pack(side=tk.LEFT, padx=(0, 10))
         
         self.lang_btn = tk.Button(
-            lang_frame,
+            right_frame,
             text="EN",
             command=self._toggle_language,
             bg="#10B981",
@@ -104,82 +163,175 @@ class TutorGUI:
             font=("Arial", 9, "bold"),
             relief=tk.FLAT,
             padx=12,
-            pady=6,
+            pady=5,
             cursor="hand2"
         )
-        self.lang_btn.pack(side=tk.RIGHT)
-    
-    def _create_search_box(self, parent):
-        """Create search box with live results."""
-        search_frame = tk.Frame(parent, bg="#FFFFFF")
-        search_frame.pack(fill=tk.X, pady=(0, 10))
+        self.lang_btn.pack(side=tk.LEFT)
         
+        # Store current reference for navigation
+        self.current_reference = None
+    
+    
+    def _create_question_section(self, parent):
+        """Create large, prominent question input area."""
+        question_frame = tk.LabelFrame(
+            parent,
+            text="Ask Your Question",
+            font=("Arial", 12, "bold"),
+            bg="#FFFFFF",
+            fg="#374151"
+        )
+        question_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        # Large text input
+        self.question_input = scrolledtext.ScrolledText(
+            question_frame,
+            font=("Arial", 14),
+            wrap=tk.WORD,
+            bg="#FFFFFF",
+            fg="#1F2937",
+            relief=tk.SOLID,
+            bd=1,
+            height=8
+        )
+        self.question_input.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        # Enter sends, Shift+Enter creates new line
+        self.question_input.bind('<Return>', lambda e: self._handle_return())
+        self.question_input.bind('<Shift-Return>', lambda e: None)  # Allow new line
+        
+        # Placeholder text hint
+        self.question_input.insert("1.0", "Type your question here...")
+        self.question_input.config(fg="#9CA3AF")
+        self.question_input.bind('<FocusIn>', self._on_question_focus_in)
+        
+        # Auto-focus on load
+        self.root.after(100, lambda: self.question_input.focus())
+    
+    def _create_response_section(self, parent):
+        """Create AI response display area."""
+        response_frame = tk.LabelFrame(
+            parent,
+            text="AI Tutor Response",
+            font=("Arial", 12, "bold"),
+            bg="#FFFFFF",
+            fg="#374151"
+        )
+        response_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        # Response display
+        self.chat_display = scrolledtext.ScrolledText(
+            response_frame,
+            font=("Arial", 12),
+            wrap=tk.WORD,
+            bg="#F9FAFB",
+            fg="#1F2937",
+            relief=tk.SOLID,
+            bd=1,
+            height=10
+        )
+        self.chat_display.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        self.chat_display.config(state=tk.DISABLED)
+    
+    
+    def _create_bottom_controls(self, parent):
+        """Create bottom control buttons."""
+        # No controls needed - stateless app
+        pass
+    
+    def _bind_shortcuts(self):
+        """Bind keyboard shortcuts - simplified."""
+        # Focus question input
+        self.root.bind('<Command-k>', lambda e: self._focus_input())
+        self.root.bind('<Control-k>', lambda e: self._focus_input())
+        
+        # Chapter navigation
+        self.root.bind('<Command-Left>', lambda e: self._previous_chapter())
+        self.root.bind('<Control-Left>', lambda e: self._previous_chapter())
+        self.root.bind('<Command-Right>', lambda e: self._next_chapter())
+        self.root.bind('<Control-Right>', lambda e: self._next_chapter())
+    
+    def _focus_input(self):
+        """Focus the question input field."""
+        self.question_input.focus()
+    
+    def _handle_return(self, event=None):
+        """Handle Enter key in question input."""
+        # Send on Enter
+        self._send_message()
+        return "break"
+    
+    def _on_question_focus_in(self, event):
+        """Handle focus in on question input - clear placeholder."""
+        if self.question_input.get(1.0, tk.END).strip() == "Type your question here...":
+            self.question_input.delete(1.0, tk.END)
+            self.question_input.config(fg="#1F2937")
+    
+    def _set_reference(self, reference: str):
+        """Set text reference and load context for LLM."""
+        if not reference:
+            return False
+        
+        reference = reference.strip()
+        language = "he" if self.current_text_language == "he" else "en"
+        
+        # Load text context (for LLM, not display)
+        if self.app.load_sefaria_text(reference, language):
+            self.current_reference = reference
+            self.current_ref_label.config(text=reference)
+            
+            # Enable navigation buttons
+            self.prev_btn.config(state=tk.NORMAL)
+            self.next_btn.config(state=tk.NORMAL)
+            
+            self._add_message(f"Studying: {reference} ({language})", "system")
+            return True
+        else:
+            self._show_error(f"Could not load: {reference}")
+            return False
+    
+    def _show_text_selector(self):
+        """Show popup window for selecting text."""
+        # Create popup window
+        popup = tk.Toplevel(self.root)
+        popup.title("Select Text to Study")
+        popup.geometry("600x500")
+        popup.configure(bg="#FFFFFF")
+        
+        # Frame for content
+        content = tk.Frame(popup, bg="#FFFFFF", padx=20, pady=20)
+        content.pack(fill=tk.BOTH, expand=True)
+        
+        # Search box
         tk.Label(
-            search_frame,
-            text="Find a text to study:",
+            content,
+            text="Find a text:",
             font=("Arial", 11, "bold"),
             bg="#FFFFFF",
             fg="#374151"
         ).pack(anchor=tk.W, pady=(0, 5))
         
-        entry_frame = tk.Frame(search_frame, bg="#FFFFFF")
-        entry_frame.pack(fill=tk.X)
+        search_entry = tk.Entry(content, font=("Arial", 12), width=50)
+        search_entry.pack(fill=tk.X, pady=(0, 10))
+        search_entry.focus()
         
-        self.text_ref_entry = tk.Entry(
-            entry_frame,
-            font=("Arial", 12),
-            relief=tk.SOLID,
-            bd=1
-        )
-        self.text_ref_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=8, padx=(0, 10))
-        self.text_ref_entry.bind('<KeyRelease>', self._on_search_keypress)
-        self.text_ref_entry.bind('<Return>', lambda e: self._load_text())
-        self.text_ref_entry.bind('<Down>', lambda e: self._focus_first_result())
-        self.text_ref_entry.bind('<Escape>', lambda e: self._hide_search_results())
-        
-        search_btn = tk.Button(
-            entry_frame,
-            text="Search",
-            command=self._load_text,
-            bg="#3B82F6",
-            fg="white",
-            font=("Arial", 10, "bold"),
-            relief=tk.FLAT,
-            padx=20,
-            pady=8,
-            cursor="hand2"
-        )
-        search_btn.pack(side=tk.LEFT)
-        
-        # Search results dropdown (initially hidden)
-        self.search_results_frame = None
-        self._search_timer = None
-    
-    def _create_popular_texts(self, parent):
-        """Create popular text quick access buttons."""
-        popular_frame = tk.Frame(parent, bg="#FFFFFF")
-        popular_frame.pack(fill=tk.X, pady=(5, 0))
-        
+        # Popular texts
         tk.Label(
-            popular_frame,
-            text="Quick Access:",
-            font=("Arial", 9, "bold"),
+            content,
+            text="Popular:",
+            font=("Arial", 10, "bold"),
             bg="#FFFFFF",
             fg="#6B7280"
-        ).pack(side=tk.LEFT, padx=(0, 10))
+        ).pack(anchor=tk.W, pady=(10, 5))
         
-        # Get popular texts
+        popular_frame = tk.Frame(content, bg="#FFFFFF")
+        popular_frame.pack(fill=tk.X, pady=(0, 10))
+        
         popular_texts = self.sefaria_manager.get_popular_texts(limit=6)
-        
-        # Create button frame
-        btn_frame = tk.Frame(popular_frame, bg="#FFFFFF")
-        btn_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
         for text in popular_texts:
             btn = tk.Button(
-                btn_frame,
+                popular_frame,
                 text=text['name'],
-                command=lambda t=text['name']: self._load_text_by_name(t),
+                command=lambda t=text['name']: self._select_text_from_popup(t, popup),
                 bg="#EBF5FF",
                 fg="#1E40AF",
                 font=("Arial", 9),
@@ -189,282 +341,69 @@ class TutorGUI:
                 cursor="hand2"
             )
             btn.pack(side=tk.LEFT, padx=3)
-    
-    def _on_search_keypress(self, event):
-        """Handle search box key press."""
-        query = self.text_ref_entry.get()
         
-        if len(query) < 1:
-            self._hide_search_results()
-            return
+        # Results list (initially empty)
+        results_frame = tk.Frame(content, bg="#FFFFFF")
+        results_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Debounce search
-        if self._search_timer:
-            self.root.after_cancel(self._search_timer)
+        results_listbox = tk.Listbox(results_frame, font=("Arial", 11), height=10)
+        results_listbox.pack(fill=tk.BOTH, expand=True)
         
-        self._search_timer = self.root.after(150, lambda: self._perform_search(query))
-    
-    def _perform_search(self, query):
-        """Perform search and show results."""
-        print(f"DEBUG: Searching for '{query}'")
-        results = self.sefaria_manager.search_texts(query, limit=6)
-        print(f"DEBUG: Found {len(results)} results")
-        if results:
-            print(f"DEBUG: Top result: {results[0]}")
-        self._show_search_results(results)
-    
-    def _show_search_results(self, results):
-        """Display search results dropdown."""
-        # Hide existing results
-        self._hide_search_results()
+        # Search handler
+        def on_search(event=None):
+            query = search_entry.get()
+            if len(query) < 1:
+                results_listbox.delete(0, tk.END)
+                return
+            
+            results = self.sefaria_manager.search_texts(query, limit=10)
+            results_listbox.delete(0, tk.END)
+            
+            for result in results:
+                display = f"{result['name']}"
+                if result.get('hebrew_name'):
+                    display += f" ({result['hebrew_name']})"
+                results_listbox.insert(tk.END, display)
         
-        if not results:
-            print("DEBUG: No results to show")
-            return
+        search_entry.bind('<KeyRelease>', on_search)
+        results_listbox.bind('<Double-Button-1>', lambda e: self._select_text_from_listbox(results_listbox, popup))
         
-        print(f"DEBUG: Showing {len(results)} results")
-        
-        # Create results frame
-        self.search_results_frame = tk.Frame(
-            self.text_ref_entry.master.master.master,
-            bg="#FFFFFF",
-            relief=tk.SOLID,
-            bd=2,
-            highlightbackground="#3B82F6",
-            highlightthickness=1
+        # Select button
+        select_btn = tk.Button(
+            content,
+            text="Select",
+            command=lambda: self._select_text_from_listbox(results_listbox, popup),
+            bg="#3B82F6",
+            fg="white",
+            font=("Arial", 10, "bold"),
+            relief=tk.FLAT,
+            padx=20,
+            pady=8,
+            cursor="hand2"
         )
-        
-        # Position below search box
-        try:
-            # Get the position relative to root window
-            x_pos = self.text_ref_entry.winfo_x() + self.text_ref_entry.master.winfo_x()
-            y_pos = self.text_ref_entry.winfo_y() + self.text_ref_entry.master.winfo_y() + 45
-            width = self.text_ref_entry.winfo_width() + 110
-            
-            self.search_results_frame.place(
-                x=x_pos,
-                y=y_pos,
-                width=width
-            )
-        except Exception as e:
-            print(f"DEBUG: Error positioning results: {e}")
-        
-        # Display results
-        for idx, result in enumerate(results):
-            result_frame = tk.Frame(self.search_results_frame, bg="#FFFFFF")
-            result_frame.pack(fill=tk.X, padx=2, pady=1)
-            
-            # Display text info
-            text_info = f"{result['name']}"
-            if result.get('hebrew_name'):
-                text_info += f" ({result['hebrew_name']})"
-            
-            label = tk.Label(
-                result_frame,
-                text=text_info,
-                font=("Arial", 10),
-                bg="#FFFFFF",
-                fg="#1F2937",
-                cursor="hand2",
-                anchor=tk.W,
-                padx=10,
-                pady=8
-            )
-            label.pack(fill=tk.X)
-            
-            # Bind click to load
-            label.bind('<Button-1>', lambda e, r=result['name']: self._load_text_by_search_result(r))
-            result_frame.bind('<Button-1>', lambda e, r=result['name']: self._load_text_by_search_result(r))
-            
-            # Hover effect
-            def on_enter(e, frame=result_frame):
-                frame.configure(bg="#EBF5FF")
-            def on_leave(e, frame=result_frame):
-                frame.configure(bg="#FFFFFF")
-            
-            label.bind('<Enter>', on_enter)
-            label.bind('<Leave>', on_leave)
-            result_frame.bind('<Enter>', on_enter)
-            result_frame.bind('<Leave>', on_leave)
+        select_btn.pack(pady=(10, 0))
     
-    def _hide_search_results(self):
-        """Hide search results dropdown."""
-        if self.search_results_frame:
-            self.search_results_frame.destroy()
-            self.search_results_frame = None
-    
-    def _focus_first_result(self):
-        """Focus the first search result."""
-        # TODO: Implement keyboard navigation
-        pass
-    
-    def _load_text_by_name(self, text_name: str):
-        """Load text by catalog name."""
-        # Get reference from catalog
+    def _select_text_from_popup(self, text_name: str, popup):
+        """Select text from popular button."""
         reference = self.sefaria_manager.load_text_by_name(text_name, self.current_text_language)
-        
         if reference:
-            # Set in entry and load
-            self.text_ref_entry.delete(0, tk.END)
-            self.text_ref_entry.insert(0, reference)
-            self._load_text()
+            self._set_reference(reference)
+            popup.destroy()
     
-    def _load_text_by_search_result(self, text_name: str):
-        """Load text from search result click."""
-        self._hide_search_results()
-        self._load_text_by_name(text_name)
-    
-    def _create_text_display(self, parent):
-        """Create source text display area."""
-        text_frame = tk.LabelFrame(parent, text="Source Text", font=("Arial", 11, "bold"), 
-                                   bg="#FFFFFF", fg="#374151")
-        text_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
-        
-        self.text_display = scrolledtext.ScrolledText(
-            text_frame,
-            font=("Arial", 12),
-            wrap=tk.WORD,
-            bg="#FFFFFF",
-            fg="#1F2937",
-            relief=tk.SOLID,
-            bd=1,
-            height=15
-        )
-        self.text_display.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        self.text_display.config(state=tk.DISABLED)
-    
-    def _create_chat_section(self, parent):
-        """Create AI chat section."""
-        chat_frame = tk.LabelFrame(parent, text="Chat with Your Tutor", 
-                                   font=("Arial", 11, "bold"), bg="#FFFFFF", fg="#374151")
-        chat_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
-        
-        # Chat display
-        self.chat_display = scrolledtext.ScrolledText(
-            chat_frame,
-            font=("Arial", 11),
-            wrap=tk.WORD,
-            bg="#F9FAFB",
-            fg="#1F2937",
-            relief=tk.SOLID,
-            bd=1,
-            height=12
-        )
-        self.chat_display.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 0))
-        self.chat_display.config(state=tk.DISABLED)
-        
-        # Input area
-        input_area = tk.Frame(chat_frame, bg="#FFFFFF")
-        input_area.pack(fill=tk.X, padx=10, pady=10)
-        
-        self.question_input = tk.Text(
-            input_area,
-            font=("Arial", 11),
-            wrap=tk.WORD,
-            height=2,
-            bg="#FFFFFF",
-            fg="#1F2937",
-            relief=tk.SOLID,
-            bd=1
-        )
-        self.question_input.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
-        self.question_input.bind('<Control-Return>', lambda e: self._send_message())
-        self.question_input.bind('<Return>', lambda e: self._handle_return())
-        
-        send_btn = tk.Button(
-            input_area,
-            text="Ask\n✓",
-            command=self._send_message,
-            bg="#8B5CF6",
-            fg="white",
-            font=("Arial", 10, "bold"),
-            relief=tk.FLAT,
-            padx=20,
-            pady=8,
-            cursor="hand2"
-        )
-        send_btn.pack(side=tk.LEFT)
-    
-    def _create_bottom_controls(self, parent):
-        """Create bottom control buttons."""
-        controls = tk.Frame(parent, bg="#F5F5F5")
-        controls.pack(fill=tk.X)
-        
-        new_session_btn = tk.Button(
-            controls,
-            text="New Session",
-            command=self._new_session,
-            bg="#6B7280",
-            fg="white",
-            font=("Arial", 10, "bold"),
-            relief=tk.FLAT,
-            padx=20,
-            pady=8,
-            cursor="hand2"
-        )
-        new_session_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
-        generate_summary_btn = tk.Button(
-            controls,
-            text="Generate Summary",
-            command=self._generate_summary,
-            bg="#059669",
-            fg="white",
-            font=("Arial", 10, "bold"),
-            relief=tk.FLAT,
-            padx=20,
-            pady=8,
-            cursor="hand2"
-        )
-        generate_summary_btn.pack(side=tk.LEFT)
-    
-    def _bind_shortcuts(self):
-        """Bind keyboard shortcuts."""
-        self.root.bind('<Command-k>', lambda e: self._focus_input())
-        self.root.bind('<Control-k>', lambda e: self._focus_input())
-        self.root.bind('<Command-n>', lambda e: self._new_session())
-        self.root.bind('<Control-n>', lambda e: self._new_session())
-    
-    def _focus_input(self):
-        """Focus the question input field."""
-        self.question_input.focus()
-    
-    def _handle_return(self, event=None):
-        """Handle Enter key in question input."""
-        # Send on Enter (can be changed to Ctrl+Enter if preferred)
-        self._send_message()
-        return "break"
-    
-    def _load_text(self):
-        """Load Sefaria text."""
-        reference = self.text_ref_entry.get().strip()
-        if not reference:
-            self._show_error("Please enter a text reference")
+    def _select_text_from_listbox(self, listbox, popup):
+        """Select text from listbox."""
+        selection = listbox.curselection()
+        if not selection:
             return
         
-        # Update language if needed
-        language = "he" if self.current_text_language == "he" else "en"
+        text_display = listbox.get(selection[0])
+        # Extract text name (before parenthesis if Hebrew name shown)
+        text_name = text_display.split(' (')[0]
         
-        # Load text
-        if self.app.load_sefaria_text(reference, language):
-            self._display_text()
-            self._add_message(f"Loaded: {reference} ({language})", "system")
-        else:
-            self._show_error(f"Could not load: {reference}")
-    
-    def _display_text(self):
-        """Display the current text content."""
-        content = self.app.get_current_text_content()
-        if content:
-            self.text_display.config(state=tk.NORMAL)
-            self.text_display.delete(1.0, tk.END)
-            self.text_display.insert(1.0, content)
-            self.text_display.config(state=tk.DISABLED)
-        else:
-            self.text_display.config(state=tk.NORMAL)
-            self.text_display.delete(1.0, tk.END)
-            self.text_display.insert(1.0, "No text loaded. Load a Sefaria text above.")
-            self.text_display.config(state=tk.DISABLED)
+        reference = self.sefaria_manager.load_text_by_name(text_name, self.current_text_language)
+        if reference:
+            self._set_reference(reference)
+            popup.destroy()
     
     def _toggle_language(self):
         """Toggle between English and Hebrew."""
@@ -476,17 +415,95 @@ class TutorGUI:
             self.lang_btn.config(text="EN", bg="#10B981")
         
         # Reload text if we have a reference
-        if self.text_ref_entry.get().strip():
-            self._load_text()
+        if self.current_reference:
+            self._set_reference(self.current_reference)
+    
+    def _parse_reference(self, ref: str) -> tuple:
+        """
+        Parse a reference like "Genesis 1:1" into (book, chapter, verse).
+        
+        Returns:
+            (book, chapter, verse) or (book, chapter, None) or (book, None, None)
+        """
+        import re
+        
+        # Pattern: "Book Chapter:Verse" or "Book Chapter" or "Book"
+        pattern = r'^(.+?)\s+(\d+)(?::(\d+))?$'
+        match = re.match(pattern, ref.strip())
+        
+        if match:
+            book = match.group(1).strip()
+            chapter = int(match.group(2))
+            verse = int(match.group(3)) if match.group(3) else None
+            return (book, chapter, verse)
+        
+        # Fallback: just book name
+        return (ref.strip(), None, None)
+    
+    def _format_reference(self, book: str, chapter: int = None, verse: int = None) -> str:
+        """Format reference components into string."""
+        if chapter is None:
+            return book
+        elif verse is None:
+            return f"{book} {chapter}"
+        else:
+            return f"{book} {chapter}:{verse}"
+    
+    def _previous_chapter(self):
+        """Navigate to previous chapter."""
+        if not self.current_reference:
+            return
+        
+        book, chapter, verse = self._parse_reference(self.current_reference)
+        
+        if chapter is None:
+            # Can't navigate if no chapter
+            return
+        
+        # Decrement chapter
+        new_chapter = chapter - 1
+        
+        if new_chapter < 1:
+            # Would go below chapter 1 - don't navigate
+            return
+        
+        new_ref = self._format_reference(book, new_chapter, None)
+        self._set_reference(new_ref)
+    
+    def _next_chapter(self):
+        """Navigate to next chapter."""
+        if not self.current_reference:
+            return
+        
+        book, chapter, verse = self._parse_reference(self.current_reference)
+        
+        if chapter is None:
+            # If no chapter, start at chapter 1
+            new_ref = self._format_reference(book, 1, None)
+        else:
+            # Increment chapter
+            new_chapter = chapter + 1
+            new_ref = self._format_reference(book, new_chapter, None)
+        
+        self._set_reference(new_ref)
     
     def _send_message(self):
         """Send a question to the AI tutor."""
         question = self.question_input.get(1.0, tk.END).strip()
-        if not question:
+        
+        # Skip if empty or placeholder
+        if not question or question == "Type your question here...":
             return
         
-        # Clear input
+        # Check if we have a reference set
+        if not self.current_reference:
+            self._show_error("Please select a text to study first (click 'Change Text')")
+            return
+        
+        # Clear input and reset placeholder
         self.question_input.delete(1.0, tk.END)
+        self.question_input.insert("1.0", "Type your question here...")
+        self.question_input.config(fg="#9CA3AF")
         
         # Show user message
         self._add_message(f"You: {question}", "user")
@@ -510,40 +527,6 @@ class TutorGUI:
         """Callback for AI responses."""
         # This is called from the app when AI responds
         pass
-    
-    def _generate_summary(self):
-        """Generate session summary."""
-        if not self.app.current_session:
-            self._show_error("No active session")
-            return
-        
-        if self.app.current_session.get_ai_interaction_count() < 3:
-            self._show_error("Need at least 3 interactions to generate a summary")
-            return
-        
-        self._add_message("Generating summary...", "system")
-        
-        # End session to trigger summary
-        self.app.end_current_session()
-        
-        self._add_message("Session ended and summary generated!", "system")
-    
-    def _new_session(self):
-        """Start a new session."""
-        if self.app.current_session:
-            # End current session
-            self.app.end_current_session()
-        
-        # Start new session
-        self.app.start_session()
-        self.current_session = self.app.current_session
-        
-        # Clear chat
-        self.chat_display.config(state=tk.NORMAL)
-        self.chat_display.delete(1.0, tk.END)
-        self.chat_display.config(state=tk.DISABLED)
-        
-        self._add_message("Started new session", "system")
     
     def _add_message(self, text: str, sender: str):
         """Add a message to the chat display."""
