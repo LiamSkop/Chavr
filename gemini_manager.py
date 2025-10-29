@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 GeminiManager - AI Chavruta Integration
-Handles all AI interactions using Google's Gemini 2.0 Flash Experimental model.
+Handles all AI interactions using Google's Gemini 2.5 Flash-Lite model.
+Free tier: 10,000 requests/minute, 10M tokens/minute.
 """
 
 import os
@@ -18,36 +19,42 @@ except ImportError:
 
 
 class GeminiManager:
-    """Manages AI interactions using Gemini 2.0 Flash Experimental model."""
+    """Manages AI interactions using Gemini 2.5 Flash-Lite model.
     
-    # System prompt for Chavruta mode (Enhanced for AI Tutor)
-    CHAVRUTA_SYSTEM_PROMPT = """You are an expert Torah tutor with deep knowledge of Jewish texts, commentary, and tradition. Your teaching style balances:
+    Uses stable production model with generous free tier limits:
+    - 10,000 requests per minute
+    - 10 million tokens per minute
+    """
+    
+    # System prompt for Chavruta mode (Concise, focused for yeshivish learners)
+    CHAVRUTA_SYSTEM_PROMPT = """You are an advanced Torah tutor for yeshivish learners.
 
-1. CLARITY: Explain concepts in accessible language, avoiding jargon without explanation
-2. DEPTH: Reference multiple commentaries and perspectives (Rashi, Ramban, modern scholars)
-3. SOCRATIC METHOD: Guide discovery with thoughtful questions rather than just answering
-4. CONTEXT: Connect ideas across texts, themes, and historical periods
-5. RESPECT: Honor both traditional and modern interpretations
+CRITICAL: Stay focused - answer ONLY what's asked, nothing more.
 
-Guidelines:
-- Responses should be 3-5 paragraphs (300-500 words) to ensure thorough explanation
-- Always cite specific commentators when relevant (e.g., "Rashi explains...", "According to Ramban...")
-- When appropriate, provide Hebrew/Aramaic text with transliteration and translation
-- End complex explanations with a reflective question to deepen understanding
-- Track what the student has learned in this session and build on previous knowledge
+Response Guidelines:
+- Quick questions → quick answers (1-2 sentences maximum)
+- Medium questions → one focused paragraph (50-100 words)
+- Detailed questions → 2-3 focused paragraphs (still concise)
+- Never explain more than what the question asks
+- Use yeshivish/Hebrew terms when directly relevant to the concept (e.g., "peirush", "pshat", "drash")
+- Primary language: English for clarity and ease of understanding
+- Assume advanced understanding of Torah concepts (no need to explain basics)
+- Always reference the current section being studied when relevant
+- Citations optional - mention commentators (Rashi, Ramban, etc.) only when directly relevant
+- No Socratic questions - just answer directly and clearly
 
-Pedagogical Approach:
-- Start with what the student already knows or has mentioned
-- Use examples from the current text being studied
-- Draw connections to related concepts or passages
-- When appropriate, pose Socratic questions: "Why might the Torah use this specific word?", "How does this connect to what we discussed earlier?"
+Tone: Yeshivish-aware but clear and accessible. Use Hebrew/yeshivish words naturally when they're the standard term (e.g., "peirush", "chavruta", "gemara"), but explain in English.
 
-You are not just answering questions - you are building understanding, one question at a time.
+Example:
+- Question: "What does amen mean?"
+- Answer: "'Amen' (אמן) means 'faith' or 'truth'. When you say 'amen' after a blessing, you're affirming belief in what was said."
+
+Stay concise. Don't over-explain.
 """
     
     def __init__(self, api_key: str):
         """
-        Initialize Gemini 2.0 Flash Experimental model.
+        Initialize Gemini 2.5 Flash-Lite model.
         
         Args:
             api_key (str): Google Generative AI API key
@@ -58,15 +65,15 @@ You are not just answering questions - you are building understanding, one quest
         # Configure Gemini
         genai.configure(api_key=api_key)
         
-        # Initialize model - using latest experimental flash model
-        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        # Initialize model - using stable production model (cost-optimized, fast)
+        self.model = genai.GenerativeModel('gemini-2.5-flash-lite')
         
-        # Generation configuration (optimized for teaching)
+        # Generation configuration (optimized for concise, focused responses)
         self.generation_config = {
-            'temperature': 0.8,  # More creative for engaging teaching
+            'temperature': 0.7,  # Balanced creativity and focus
             'top_p': 0.9,
             'top_k': 40,
-            'max_output_tokens': 1500,  # 3-5 paragraphs for thorough explanation
+            'max_output_tokens': 300,  # Default medium length (will be overridden per question)
         }
         
         # Context storage
@@ -76,7 +83,7 @@ You are not just answering questions - you are building understanding, one quest
         # Error callback
         self.error_callback: Optional[Callable[[str], None]] = None
         
-        print("✓ GeminiManager initialized with Gemini 2.0 Flash Experimental")
+        print("✓ GeminiManager initialized with Gemini 2.5 Flash-Lite")
     
     def set_error_callback(self, callback: Callable[[str], None]):
         """Set callback function for error notifications."""
@@ -129,14 +136,26 @@ You are not just answering questions - you are building understanding, one quest
                 self.error_callback("Please enter a question")
             return None
         
-        # Build context-aware prompt
-        prompt = self._build_chavruta_prompt(question)
+        # Detect question type for adaptive response length
+        question_type = self._detect_question_type(question)
+        print(f"DEBUG: Detected question type: {question_type}")
         
-        # Call Gemini API with extended length for thorough responses
-        response = self._call_gemini_api(prompt, max_tokens=1500)
+        # Build context-aware prompt with length guidance
+        prompt = self._build_chavruta_prompt(question, question_type)
+        
+        # Adaptive token limits based on question type
+        token_limits = {
+            'quick': 150,      # 1-2 sentences
+            'medium': 300,     # 1 paragraph
+            'detailed': 500    # 2-3 paragraphs (still focused)
+        }
+        max_tokens = token_limits.get(question_type, 300)
+        
+        # Call Gemini API with adaptive length
+        response = self._call_gemini_api(prompt, max_tokens=max_tokens)
         
         if response:
-            print(f"✓ Generated AI response for question: {question[:50]}...")
+            print(f"✓ Generated AI response ({question_type}) for question: {question[:50]}...")
         
         return response
     
@@ -161,12 +180,54 @@ You are not just answering questions - you are building understanding, one quest
         
         return response
     
-    def _build_chavruta_prompt(self, question: str) -> str:
+    def _detect_question_type(self, question: str) -> str:
+        """
+        Detect question type to determine appropriate response length.
+        
+        Args:
+            question: User's question
+            
+        Returns:
+            'quick', 'medium', or 'detailed'
+        """
+        question_lower = question.lower().strip()
+        
+        # Quick indicators - definition/meaning questions
+        quick_patterns = ["what does", "what is", "define", "meaning of"]
+        if any(pattern in question_lower for pattern in quick_patterns):
+            # If very short question (likely single word), definitely quick
+            if len(question.split()) <= 6:
+                return 'quick'
+        
+        # Single word questions are usually quick
+        if len(question.split()) <= 3:
+            return 'quick'
+        
+        # Detailed indicators - explicit requests for depth
+        detailed_patterns = [
+            "tell me everything",
+            "explain in detail",
+            "compare",
+            "difference between",
+            "relationship between"
+        ]
+        if any(pattern in question_lower for pattern in detailed_patterns):
+            return 'detailed'
+        
+        # "Explain" questions are usually medium
+        if "explain" in question_lower:
+            return 'medium'
+        
+        # Default to medium for most questions
+        return 'medium'
+    
+    def _build_chavruta_prompt(self, question: str, question_type: str = 'medium') -> str:
         """
         Build context-aware prompt for Q&A.
         
         Args:
             question (str): User's question
+            question_type (str): 'quick', 'medium', or 'detailed'
             
         Returns:
             str: Complete prompt for Gemini
@@ -175,6 +236,14 @@ You are not just answering questions - you are building understanding, one quest
         
         try:
             prompt_parts = [self.CHAVRUTA_SYSTEM_PROMPT, "\n\n"]
+            
+            # Add length guidance based on question type
+            length_guidance = {
+                'quick': "Keep your answer to 1-2 sentences maximum. Be concise.",
+                'medium': "Keep your answer to one focused paragraph (50-100 words).",
+                'detailed': "Provide 2-3 focused paragraphs, but stay concise and on-topic."
+            }
+            prompt_parts.append(f"Response Length: {length_guidance.get(question_type, length_guidance['medium'])}\n\n")
             
             # Add Sefaria text context if available
             if self.current_sefaria_text:
@@ -270,7 +339,7 @@ Keep the summary to 3-4 paragraphs maximum.
     
     def _call_gemini_api(self, prompt: str, max_tokens: int = 500) -> Optional[str]:
         """
-        Core API call with error handling.
+        Core API call with error handling and exponential backoff retry for rate limits.
         
         Args:
             prompt (str): Complete prompt for Gemini
@@ -279,61 +348,88 @@ Keep the summary to 3-4 paragraphs maximum.
         Returns:
             str: AI response or None if failed
         """
+        import time
         import traceback
         
-        try:
-            # Update generation config with token limit
-            config = self.generation_config.copy()
-            config['max_output_tokens'] = max_tokens
-            
-            print(f"DEBUG: Calling Gemini API with {len(prompt)} chars, max_tokens={max_tokens}")
-            
-            response = self.model.generate_content(
-                prompt,
-                generation_config=config
-            )
-            
-            if response and response.text:
-                print(f"DEBUG: Gemini response received ({len(response.text)} chars)")
-                return response.text.strip()
-            else:
-                print("⚠ Gemini returned empty response")
-                print(f"DEBUG: Response object: {response}")
-                if self.error_callback:
-                    self.error_callback("AI returned empty response")
-                return None
+        max_retries = 3
+        base_delay = 1.0  # Start with 1 second
+        
+        for attempt in range(max_retries + 1):
+            try:
+                # Update generation config with token limit
+                config = self.generation_config.copy()
+                config['max_output_tokens'] = max_tokens
                 
-        except KeyError as e:
-            error_msg = f"KeyError accessing response: {str(e)}"
-            print(f"✗ {error_msg}")
-            print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
-            if self.error_callback:
-                self.error_callback(f"Data structure error: {error_msg}")
-            return None
-        except Exception as e:
-            error_msg = str(e)
-            
-            print(f"✗ Gemini API error: {error_msg}")
-            print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
-            
-            # Handle specific errors
-            if "API_KEY" in error_msg.upper():
-                print("✗ Invalid or missing Gemini API key")
+                print(f"DEBUG: Calling Gemini API with {len(prompt)} chars, max_tokens={max_tokens}")
+                
+                response = self.model.generate_content(
+                    prompt,
+                    generation_config=config
+                )
+                
+                if response and response.text:
+                    print(f"DEBUG: Gemini response received ({len(response.text)} chars)")
+                    return response.text.strip()
+                else:
+                    print("⚠ Gemini returned empty response")
+                    print(f"DEBUG: Response object: {response}")
+                    if self.error_callback:
+                        self.error_callback("AI returned empty response")
+                    return None
+                    
+            except KeyError as e:
+                error_msg = f"KeyError accessing response: {str(e)}"
+                print(f"✗ {error_msg}")
+                print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
                 if self.error_callback:
-                    self.error_callback("API key error. Please check GEMINI_API_KEY.")
-            elif "RATE_LIMIT" in error_msg.upper() or "429" in error_msg:
-                print("✗ Rate limit exceeded")
-                if self.error_callback:
-                    self.error_callback("Rate limit exceeded. Please wait and try again.")
-            elif "QUOTA" in error_msg.upper():
-                print("✗ API quota exceeded")
-                if self.error_callback:
-                    self.error_callback("API quota exceeded. Please check your billing.")
-            else:
-                if self.error_callback:
-                    self.error_callback(f"AI error: {error_msg[:100]}")
-            
-            return None
+                    self.error_callback(f"Data structure error: {error_msg}")
+                return None
+            except Exception as e:
+                error_msg = str(e)
+                error_type = type(e).__name__
+                
+                # Check if it's a 429 rate limit error
+                is_rate_limit = (
+                    "429" in error_msg or 
+                    "ResourceExhausted" in error_type or
+                    "RATE_LIMIT" in error_msg.upper()
+                )
+                
+                if is_rate_limit:
+                    if attempt < max_retries:
+                        # Exponential backoff: 1s, 2s, 4s
+                        delay = base_delay * (2 ** attempt)
+                        print(f"⚠ Rate limit hit, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries + 1})")
+                        time.sleep(delay)
+                        continue  # Retry
+                    else:
+                        # Max retries exceeded
+                        print(f"✗ Rate limit exceeded after {max_retries + 1} attempts")
+                        if self.error_callback:
+                            self.error_callback("Rate limit exceeded. Please wait a few minutes and try again.")
+                        return None
+                
+                # Handle other errors
+                print(f"✗ Gemini API error: {error_msg}")
+                print(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
+                
+                # Handle specific errors
+                if "API_KEY" in error_msg.upper():
+                    print("✗ Invalid or missing Gemini API key")
+                    if self.error_callback:
+                        self.error_callback("API key error. Please check GEMINI_API_KEY.")
+                elif "QUOTA" in error_msg.upper():
+                    print("✗ API quota exceeded")
+                    if self.error_callback:
+                        self.error_callback("API quota exceeded. Please check your billing.")
+                else:
+                    if self.error_callback:
+                        self.error_callback(f"AI error: {error_msg[:100]}")
+                
+                return None
+        
+        # Should never reach here, but just in case
+        return None
     
     def _truncate_text(self, text: str, max_chars: int = 2000) -> str:
         """
