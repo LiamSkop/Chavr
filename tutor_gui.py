@@ -7,8 +7,21 @@ Simplified interface without speech transcription.
 import tkinter as tk
 from tkinter import scrolledtext
 from datetime import datetime
+from pathlib import Path
+import http.server
+import socketserver
+import threading
+import webbrowser
 from tutor_app import TutorApp
 from sefaria_manager import SefariaManager
+
+# Try to import webview, but handle gracefully if not available
+try:
+    import webview
+    WEBVIEW_AVAILABLE = True
+except ImportError:
+    WEBVIEW_AVAILABLE = False
+    print("Warning: pywebview not installed. Text display will use fallback.")
 
 
 class TutorGUI:
@@ -18,8 +31,8 @@ class TutorGUI:
         """Initialize the GUI application."""
         self.root = tk.Tk()
         self.root.title("Chavr - Your AI Torah Tutor")
-        self.root.geometry("900x1000")
-        self.root.minsize(800, 700)
+        self.root.geometry("900x1200")  # Increased height for text display panel
+        self.root.minsize(800, 800)  # Increased minimum height
         self.root.configure(bg="#F5F5F5")
         
         # State management
@@ -27,6 +40,8 @@ class TutorGUI:
         self.current_text_content = None
         self.current_text_language = "en"
         self._terms_extracting = False
+        self.selected_phrase = None  # Track selected text for phrase selection
+        self.webview_window = None  # Webview window for text display
         
         # Initialize app
         self.app = TutorApp(question_callback=self._on_ai_response)
@@ -34,7 +49,7 @@ class TutorGUI:
         # Build UI
         self._setup_ui()
         
-        # Bind keyboard shortcuts
+        # Bind keyboard shortcuts (after UI is built so widgets exist)
         self._bind_shortcuts()
     
     def _setup_ui(self):
@@ -48,6 +63,9 @@ class TutorGUI:
         
         # Text reference section (minimal - just for context)
         self._create_text_reference_section(main_frame)
+        
+        # Text display panel (Premium webview-based)
+        self._create_text_display_section(main_frame)
         
         # Challenging terms section (expandable)
         self._create_challenging_terms_section(main_frame)
@@ -175,6 +193,276 @@ class TutorGUI:
         # Store current reference for navigation
         self.current_reference = None
     
+    def _create_text_display_section(self, parent):
+        """Create premium webview-based text display panel."""
+        # Main container frame
+        text_display_frame = tk.LabelFrame(
+            parent,
+            text="Text",
+            font=("Arial", 12, "bold"),
+            bg="#FFFFFF",
+            fg="#374151"
+        )
+        text_display_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        if not WEBVIEW_AVAILABLE:
+            # Fallback: show message to install pywebview
+            error_label = tk.Label(
+                text_display_frame,
+                text="Please install pywebview: pip install pywebview",
+                fg="#DC2626",
+                bg="#FFFFFF",
+                pady=20
+            )
+            error_label.pack()
+            return
+        
+        # Start local HTTP server for serving static files
+        self._start_local_server()
+        
+        # Get path to HTML file
+        static_dir = Path(__file__).parent / "static"
+        html_path = static_dir / "text_display.html"
+        
+        # Create API class for communication
+        self.text_display_api = TextDisplayAPI(self)
+        
+        # Store webview window reference (will be created when needed)
+        self.webview_window = None
+        self.webview_initialized = False
+        
+        # Create webview window - but start it properly integrated with tkinter
+        try:
+            # Use file:// URL for local files
+            file_url = f"file://{html_path.absolute()}"
+            
+            # Create window configuration
+            self.webview_config = {
+                'title': 'Text Display',
+                'url': file_url,
+                'width': 850,
+                'height': 250,
+                'resizable': True,
+                'js_api': self.text_display_api,
+                'background_color': '#1F2937',
+                'frameless': False
+            }
+            
+            # Don't initialize webview here - we'll do it before mainloop starts
+            # Store config for later initialization
+            self._webview_ready = False
+            
+        except Exception as e:
+            print(f"Error setting up webview: {e}")
+            error_label = tk.Label(
+                text_display_frame,
+                text=f"Error loading text display: {e}",
+                fg="#DC2626",
+                bg="#FFFFFF"
+            )
+            error_label.pack(pady=20)
+    
+    def _start_local_server(self):
+        """Start a local HTTP server for serving static files and handling API calls."""
+        static_dir = Path(__file__).parent / "static"
+        gui_instance = self  # Capture reference for API calls
+        
+        class Handler(http.server.SimpleHTTPRequestHandler):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, directory=str(static_dir), **kwargs)
+            
+            def do_OPTIONS(self):
+                """Handle CORS preflight requests."""
+                self.send_response(200)
+                self.end_headers()
+            
+            def do_POST(self):
+                """Handle POST requests from JavaScript (button clicks, selections)."""
+                if self.path == '/api/ask-about-selection':
+                    content_length = int(self.headers['Content-Length'])
+                    post_data = self.rfile.read(content_length)
+                    
+                    try:
+                        import json
+                        data = json.loads(post_data.decode('utf-8'))
+                        phrase = data.get('phrase', '')
+                        
+                        # Call the GUI method to ask about selection
+                        # Use root.after to ensure it runs on main thread
+                        if phrase:
+                            gui_instance.root.after(0, lambda: gui_instance._ask_about_selection(phrase))
+                        
+                        # Send success response
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.send_header('Access-Control-Allow-Origin', '*')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'status': 'ok'}).encode())
+                    except Exception as e:
+                        print(f"Error handling API request: {e}")
+                        self.send_response(500)
+                        self.end_headers()
+                elif self.path == '/api/text-selected':
+                    content_length = int(self.headers['Content-Length'])
+                    post_data = self.rfile.read(content_length)
+                    
+                    try:
+                        import json
+                        data = json.loads(post_data.decode('utf-8'))
+                        text = data.get('text', '')
+                        
+                        # Store selected text
+                        gui_instance.root.after(0, lambda: gui_instance._on_text_selected(text))
+                        
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.send_header('Access-Control-Allow-Origin', '*')
+                        self.end_headers()
+                        self.wfile.write(json.dumps({'status': 'ok'}).encode())
+                    except Exception as e:
+                        print(f"Error handling selection: {e}")
+                        self.send_response(500)
+                        self.end_headers()
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+            
+            def end_headers(self):
+                # Add CORS headers for all responses
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                super().end_headers()
+        
+        # Use a fixed port for consistency
+        port = 8765
+        try:
+            self.http_server = socketserver.TCPServer(("", port), Handler)
+            self.http_port = port
+        except OSError:
+            # Port in use, try another
+            port = 8766
+            self.http_server = socketserver.TCPServer(("", port), Handler)
+            self.http_port = port
+        
+        def serve():
+            try:
+                self.http_server.serve_forever()
+            except Exception as e:
+                print(f"HTTP server error: {e}")
+        
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        
+        self.http_url = f"http://localhost:{self.http_port}"
+    
+    def _initialize_webview(self):
+        """Initialize webview - workaround for main thread conflict."""
+        # pywebview requires main thread but conflicts with tkinter
+        # Solution: Use a local HTTP server and open in system browser
+        # OR use webview in a separate process
+        # For now, we'll use a simpler approach: open HTML file directly
+        
+        try:
+            if not self.webview_initialized:
+                static_dir = Path(__file__).parent / "static"
+                html_path = static_dir / "text_display.html"
+                
+                # Open HTML file via HTTP server for better functionality
+                # This provides the premium experience but in a separate window
+                import webbrowser
+                http_url = f"{self.http_url}/text_display.html"
+                
+                print(f"Opening text display in browser: {http_url}")
+                webbrowser.open(http_url)
+                
+                self.webview_initialized = True
+                print("Note: Text display opened in browser.")
+                print("For embedded display, consider using cefpython3 or restructuring the app.")
+                
+        except Exception as e:
+            print(f"Error initializing webview: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _update_text_display(self, text_content, language):
+        """Update the text display."""
+        # Since webview integration is complex, we'll use a file-based approach
+        # Write text content to a JSON file that the HTML can read via polling
+        try:
+            static_dir = Path(__file__).parent / "static"
+            data_file = static_dir / "text_data.json"
+            
+            import json
+            data = {
+                'text': text_content,
+                'language': language,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            with open(data_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            
+            # If webview window exists, try to update it
+            if self.webview_window:
+                try:
+                    escaped_text = text_content.replace("'", "\\'").replace("\n", "\\n")
+                    escaped_lang = language.replace("'", "\\'")
+                    js_code = f"window.setTextContent('{escaped_text}', '{escaped_lang}')"
+                    self.webview_window.evaluate_js(js_code)
+                except:
+                    pass  # Webview might not be ready yet
+            
+        except Exception as e:
+            print(f"Error updating text display: {e}")
+    
+    def _on_text_selected(self, selected_text):
+        """Handle text selection from webview."""
+        self.selected_phrase = selected_text
+        # Note: Button is handled in webview, but we store the selection
+    
+    def _ask_about_selection(self, phrase=None):
+        """Ask about the selected phrase."""
+        selected = phrase or self.selected_phrase
+        if not selected:
+            return
+        
+        if not self.current_reference:
+            self._show_error("Please select a text to study first")
+            return
+        
+        try:
+            question = f"What does '{selected}' mean in this context?"
+            
+            # Clear selection in webview
+            if self.webview_window:
+                try:
+                    self.webview_window.evaluate_js("window.clearSelection()")
+                except:
+                    pass
+            
+            self.selected_phrase = None
+            
+            # Show user message
+            self._add_message(f"You: {question}", "user")
+            
+            # Get AI response
+            self._add_message("Thinking...", "system")
+            
+            # Call the app's ask_question method
+            response = self.app.ask_question(question)
+            
+            if response:
+                # Remove "Thinking..." and add AI response
+                self.chat_display.config(state=tk.NORMAL)
+                self.chat_display.delete("end-2l", "end-1l")
+                self._add_message(f"AI Tutor: {response}", "ai")
+                self.chat_display.config(state=tk.DISABLED)
+            else:
+                self._add_message("No response from AI tutor.", "error")
+                
+        except Exception as e:
+            self._show_error(f"Error asking about selection: {str(e)}")
     
     def _create_question_section(self, parent):
         """Create large, prominent question input area."""
@@ -449,10 +737,20 @@ class TutorGUI:
         reference = reference.strip()
         language = "he" if self.current_text_language == "he" else "en"
         
-        # Load text context (for LLM, not display)
+        # Load text context (for LLM and display)
         if self.app.load_sefaria_text(reference, language):
             self.current_reference = reference
             self.current_ref_label.config(text=reference)
+            
+            # Update text display panel (webview)
+            text_content = self.app.get_current_text_content()
+            if text_content:
+                self._update_text_display(text_content, language)
+            else:
+                self._update_text_display("Text content not available...", language)
+            
+            # Clear any previous selection
+            self.selected_phrase = None
             
             # Enable navigation buttons
             self.prev_btn.config(state=tk.NORMAL)
@@ -599,7 +897,7 @@ class TutorGUI:
             self.current_text_language = "en"
             self.lang_btn.config(text="EN", bg="#10B981")
         
-        # Reload text if we have a reference
+        # Reload text if we have a reference (this will update the text display)
         if self.current_reference:
             self._set_reference(self.current_reference)
     
@@ -747,7 +1045,32 @@ class TutorGUI:
     
     def run(self):
         """Start the GUI main loop."""
+        # Initialize webview before starting mainloop
+        if hasattr(self, 'webview_config') and not self.webview_initialized:
+            self._initialize_webview()
+        
+        # Start tkinter mainloop
+        # Note: If webview was started, it will block here
+        # We need to integrate them properly
         self.root.mainloop()
+        
+        # If webview needs to be started, we'll need a different approach
+        # For now, webview won't start automatically due to main thread conflict
+
+
+class TextDisplayAPI:
+    """API class for communication between Python and JavaScript."""
+    
+    def __init__(self, gui):
+        self.gui = gui
+    
+    def onTextSelected(self, text):
+        """Called when text is selected in webview."""
+        self.gui._on_text_selected(text)
+    
+    def askAboutSelection(self, phrase):
+        """Called when user clicks 'What does this mean?' button."""
+        self.gui._ask_about_selection(phrase)
 
 
 if __name__ == "__main__":
