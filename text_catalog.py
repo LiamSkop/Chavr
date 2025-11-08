@@ -199,15 +199,11 @@ class TextCatalog:
         ),
     ]
     
-    def __init__(self, progress_tracker=None):
+    def __init__(self):
         """
         Initialize text catalog.
-        
-        Args:
-            progress_tracker: Optional ProgressTracker for recent/popular tracking
         """
         self.entries = self.TEXTS_DATABASE.copy()
-        self.progress_tracker = progress_tracker
         
         # User access tracking (for recent/popular)
         self.access_history_file = Path("text_access_history.json")

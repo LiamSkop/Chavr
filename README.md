@@ -1,286 +1,195 @@
-# Chavr
+# Chavr - AI Torah Tutor
 
-A Python speech recognition and audio processing application built with PyAudio, Whisper, and NumPy. **Phase 9 Enhanced** with AI Chavruta partner powered by Gemini 2.0 Flash Experimental.
+A lightweight, stateless Python application for Torah study with AI-powered Q&A. Focused on quick question-answering while reading Jewish texts.
 
 ## Features
 
-- **Phase 9 Enhanced**: AI Chavruta partner powered by Gemini 2.0 Flash Experimental
-- **Phase 8 Enhanced**: Sefaria text integration with intelligent autocomplete
-- **Phase 7 Enhanced**: Fine-tuned Hebrew Whisper model (`ivrit-ai/whisper-large-v3-ct2`)
-- Real-time speech recognition using OpenAI Whisper (faster-whisper optimized)
-- Multi-language support (Hebrew/English) with automatic language detection
-- **NEW**: AI-powered Q&A during study sessions (voice command: "Chavr, [question]")
-- **NEW**: Automatic session summarization with key insights
-- **NEW**: Context-aware AI responses using current Sefaria text and conversation history
-- **NEW**: Balanced Chavruta responses (Socratic questions, explanations, challenges)
-- Sefaria API integration for Jewish text fetching
-- Intelligent autocomplete with 120+ Jewish texts (Tanakh, Mishnah, Halachic works, etc.)
-- Text context management with session integration
-- Language toggle (EN/HE) for text display
-- Local text caching for offline access
-- Continuous audio streaming with Voice Activity Detection (VAD)
-- Session management and transcript storage
-- Post-processing filters to reduce hallucinations (e.g., repeated "you")
-- Audio device detection and selection
-- Interactive GUI interface with Tkinter
-- Cross-platform support (macOS, Linux, Windows)
+- **AI-Powered Q&A**: Get instant answers to questions about Jewish texts using Google's Gemini 2.5 Flash-Lite
+- **Sefaria Integration**: Load any Jewish text from Sefaria's vast library with intelligent search
+- **Challenging Terms Extraction**: Automatically identifies and explains difficult terms before you start reading
+- **Chapter Navigation**: Quick navigation between chapters with keyboard shortcuts
+- **Smart Text Search**: Fuzzy search to find texts by name, Hebrew name, or partial matches
+- **Context-Aware**: AI understands the current text you're studying and recent conversation
+- **Concise Responses**: Adaptive response length based on question complexity
+- **Yeshivish-Aware**: Understands yeshivish terminology and provides culturally appropriate explanations
 
 ## Requirements
 
 - Python 3.8 or higher
-- PortAudio library (for PyAudio)
-- ffmpeg (for audio processing with Whisper)
-- Internet connection (for model download on first run)
+- Internet connection (for Sefaria API and Gemini API)
 
 ## Installation
 
-1. Clone or download this project
-2. Navigate to the project directory:
+1. Clone or download this project:
    ```bash
    cd Chavr
    ```
 
-3. Create and activate a virtual environment:
+2. Create and activate a virtual environment:
    ```bash
    python3 -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
-4. Install required packages:
+3. Install required packages:
    ```bash
    pip install -r requirements.txt
    ```
 
-### macOS Installation Notes
-
-If you encounter issues installing PyAudio on macOS, you may need to install PortAudio and ffmpeg first:
-
-```bash
-# Install Homebrew if not already installed
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install PortAudio and ffmpeg
-brew install portaudio ffmpeg
-
-# Then install the Python packages
-pip install -r requirements.txt
-```
-
-### Phase 7 Model Download
-
-On first run, the fine-tuned Hebrew Whisper model (`ivrit-ai/whisper-large-v3-ct2`, ~1.5-2.5GB) will be automatically downloaded and cached. This may take a few minutes depending on your internet connection.
-
-### Phase 8 Sefaria Integration
-
-The application now includes Sefaria API integration for fetching Jewish texts. Text references are cached locally in the `sefaria_cache/` directory for offline access.
-
-### Phase 9 AI Chavruta Partner
-
-Chavr now includes an AI study partner powered by Google's Gemini 2.0 Flash Experimental model.
-
-#### Setup
-
-1. Get a Gemini API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Create a `.env` file in the project root:
-   ```
-   GEMINI_API_KEY=your_api_key_here
-   ```
-3. The AI will be available during study sessions
-
-#### Features
-
-- **Real-time Q&A**: Ask questions by saying "Chavr, [your question]" during study sessions
-- **Session Summaries**: Generate study session summaries automatically when sessions end
-- **Context-aware**: AI uses your current Sefaria text and recent conversation history
-- **Balanced responses**: Mix of Socratic questions, explanations, and challenges
-- **Multilingual**: Supports Hebrew and English naturally
-
-#### Cost
-
-Gemini 2.0 Flash Experimental is very affordable:
-- First 1500 requests/day: Free
-- After: ~$0.075 per 1000 requests
-- Typical usage: 10-50 requests per study session
+4. Set up Gemini API key:
+   - Get a free API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+   - Create a `.env` file in the project root:
+     ```
+     GEMINI_API_KEY=your_api_key_here
+     ```
+   - Optional: Install `python-dotenv` for automatic `.env` loading:
+     ```bash
+     pip install python-dotenv
+     ```
 
 ## Usage
 
 ### Running the Application
 
-Activate the virtual environment and run the GUI application:
-
 ```bash
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-python gui.py
+python run_tutor.py
 ```
 
-The GUI provides an intuitive interface for:
-- Loading Jewish texts from Sefaria with autocomplete
-- Recording and transcribing speech in Hebrew/English
-- Managing study sessions with text context
-- Switching between English and Hebrew text display
-- **NEW**: AI-powered Q&A during study sessions
-- **NEW**: Session summaries and insights
+### Basic Workflow
 
-### Phase 7 CLI Options
+1. **Load a Text**: Click "Change Text" button, search for a text (e.g., "Chayei Adam"), and select it
+2. **View Challenging Terms**: Click "▼ Challenging Terms" to see difficult terms explained before reading
+3. **Ask Questions**: Type your question in the input field and press Enter or click "Ask"
+4. **Navigate Chapters**: Use keyboard shortcuts or buttons to move between chapters
 
-```bash
-# Basic usage
-python main.py
+### Keyboard Shortcuts
 
-# Use GPU acceleration (if available)
-python main.py --device cuda --compute float16
+- **Cmd/Ctrl + K**: Focus question input field
+- **Cmd/Ctrl + Left Arrow**: Previous chapter
+- **Cmd/Ctrl + Right Arrow**: Next chapter
+- **Enter**: Send question (when input is focused)
 
-# Force Hebrew-only mode for accuracy testing
-python main.py --hebrew-only
+### Example Usage
 
-# Use different Whisper model size
-python main.py --model large
-```
+1. Load "Chayei Adam 6"
+2. Review challenging terms (if available)
+3. Read the text in your physical book
+4. Ask questions like:
+   - "What does amen mean?"
+   - "Explain the hekesh here"
+   - "What's the halacha?"
+5. Get concise, yeshivish-aware answers instantly
 
-### Interactive Commands
+## Features in Detail
 
-Once the application is running, you can use these commands:
+### AI Q&A System
 
-- `start` - Begin continuous listening/transcription
-- `stop` - Stop continuous listening
-- `listen` - Single phrase listening (original mode)
-- `status` - Show current listening status
-- `sessions` - List all saved sessions
-- `load <id>` - Load and display a specific session
-- `delete <id>` - Delete a session
-- `search <keyword>` - Search across all sessions
-- `current` - Show current session info
-- `stats` - Show session statistics
-- `quit` or `exit` - Exit the application
+- **Adaptive Response Length**: Quick questions get quick answers (1-2 sentences), detailed questions get focused paragraphs
+- **Question Type Detection**: Automatically detects if you're asking for a definition, explanation, or detailed analysis
+- **Context Awareness**: Remembers your current text and recent conversation history
+- **Yeshivish-Aware**: Uses Hebrew/yeshivish terms naturally when relevant, but explains in English
 
-### Example Session
+### Challenging Terms Feature
 
-```
-Chavr Speech Recognition App - Phase 7: Enhanced Speech Recognition
-====================================================================
-Commands:
-  'start' - Begin continuous listening/transcription
-  'stop' - Stop continuous listening
-  'listen' - Single phrase listening (original mode)
-  'status' - Show current listening status
-  'sessions' - List all saved sessions
-  'load <id>' - Load and display a specific session
-  'delete <id>' - Delete a session
-  'search <keyword>' - Search across all sessions
-  'current' - Show current session info
-  'stats' - Show session statistics
-  'quit' or 'exit' - Exit the application
-====================================================================
+When you load a chapter, the app automatically:
+1. Analyzes the text for difficult terms
+2. Extracts 5-8 challenging words/phrases
+3. Provides brief explanations for each
+4. Caches results for instant loading next time
 
-Phase 7: Initializing faster-whisper with fine-tuned Hebrew model...
-✓ Faster-whisper adapter initialized
+Terms are displayed in an expandable panel that you can reference while reading.
 
-Enter command: start
-✓ Started new session: Session_2025-10-20_14-30-15
-✓ Continuous listening started - speak naturally!
-[14:30:18] [Hebrew] שלום, איך שלומך?
-[14:30:22] [English] How are you doing today?
+### Text Search
 
-Enter command: stop
-✓ Continuous listening stopped
-✓ Session saved: sessions/2025-10-20_14-30-15_a1b2c3d4.json
-  Transcripts: 2
-  Duration: 8.5s
-  Languages: Hebrew, English
+Smart search capabilities:
+- **Fuzzy Matching**: Finds texts even with typos or partial names
+- **Hebrew Support**: Search by Hebrew names
+- **Popular Texts**: Quick access to frequently studied texts
+- **Recent Texts**: Easy access to recently loaded texts
 
-Enter command: quit
-Goodbye!
-```
+### Chapter Navigation
+
+- Previous/Next chapter buttons
+- Keyboard shortcuts for quick navigation
+- Automatically loads text context for AI
 
 ## Project Structure
 
 ```
 Chavr/
-├── main.py              # Main application file
-├── requirements.txt     # Python package dependencies
-├── README.md           # This file
-└── venv/               # Virtual environment (created during setup)
+├── run_tutor.py           # Main entry point
+├── tutor_gui.py           # GUI interface
+├── tutor_app.py           # Core application logic
+├── gemini_manager.py      # AI integration (Gemini 2.5 Flash-Lite)
+├── sefaria_manager.py    # Sefaria API integration
+├── text_catalog.py       # Text search and catalog
+├── requirements.txt      # Python dependencies
+├── README.md             # This file
+├── sefaria_cache/        # Cached texts and terms
+└── venv/                 # Virtual environment
 ```
 
 ## Dependencies
 
-- **PyAudio** (>=0.2.11): Cross-platform audio I/O library
-- **NumPy** (>=1.24.0): Fundamental package for scientific computing
-- **openai-whisper** (>=20231117): OpenAI's Whisper speech recognition
-- **faster-whisper** (>=1.0.0): Optimized Whisper implementation with CTranslate2
-- **webrtcvad** (>=2.0.10): Voice Activity Detection library
 - **requests** (>=2.25.0): HTTP library for Sefaria API calls
 - **google-generativeai** (>=0.3.0): Google's Gemini AI model integration
+- **python-dotenv** (optional): For `.env` file support
 
-## Features in Detail
+## API Costs
 
-### Phase 7 Enhanced Speech Recognition
-- Fine-tuned Hebrew Whisper model (`ivrit-ai/whisper-large-v3-ct2`) with ~48% WER improvement
-- Optimized inference with faster-whisper and CTranslate2
-- Hebrew-prioritized language detection for better accuracy
-- Post-processing filters to reduce hallucinations
-- Support for CPU and GPU acceleration
-- Word-level timestamps for precise transcription
+**Gemini 2.5 Flash-Lite (Free Tier):**
+- 10,000 requests per minute
+- 10 million tokens per minute
+- More than enough for personal use
 
-### Phase 8 Sefaria Integration
-- Real-time text fetching from Sefaria API
-- Intelligent autocomplete with 120+ Jewish texts
-- Local caching for offline access
-- Language toggle (EN/HE) for text display
-- HTML tag stripping for clean text display
-
-### Phase 9 AI Chavruta Partner
-- Gemini 2.0 Flash Experimental model integration
-- Context-aware responses using current Sefaria text and conversation history
-- Balanced Chavruta responses (Socratic questions, explanations, challenges)
-- Automatic session summarization with key insights
-- Voice command activation ("Chavr, [question]")
-- Multilingual support (Hebrew and English)
-- Comprehensive error handling for API failures
-
-### Continuous Audio Processing
-- Real-time audio streaming with Voice Activity Detection
-- Session management and transcript storage
-- Search functionality across all sessions
-- Audio device detection and selection
-
-### Error Handling
-- Graceful fallback to openai-whisper if faster-whisper fails
-- Comprehensive error messages and logging
-- Timeout management for speech detection
-- AI API error handling with user-friendly messages
+**Sefaria API:**
+- Free and open source
+- Rate limits apply but generous for normal usage
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **PyAudio installation fails**: Install PortAudio system library first
-2. **ffmpeg not found**: Install ffmpeg for audio processing (`brew install ffmpeg`)
-3. **Model download fails**: Ensure internet connection for initial model download
-4. **No audio devices found**: Check microphone permissions and connections
-5. **Permission errors**: Grant microphone access to your terminal/IDE
-6. **CUDA out of memory**: Use `--device cpu` or `--compute int8` for lower memory usage
-7. **AI not responding**: Check that GEMINI_API_KEY is set correctly in .env file
-8. **API quota exceeded**: Check your Google AI Studio billing and usage limits
-9. **Rate limit errors**: Wait a moment and try again, or check your API key permissions
+1. **"AI tutor is not available"**: 
+   - Check that `GEMINI_API_KEY` is set in `.env` file
+   - Verify API key is valid at [Google AI Studio](https://makersuite.google.com/app/apikey)
 
-### Getting Help
+2. **"Rate limit exceeded"**: 
+   - The app automatically retries with exponential backoff
+   - Wait a few seconds and try again
+   - Free tier has generous limits (10K req/min)
 
-If you encounter issues:
-1. Check that all dependencies are properly installed
-2. Verify microphone permissions
-3. Test with a simple audio recording first
-4. Check internet connectivity for model download
+3. **Text not loading**:
+   - Check internet connection
+   - Verify text reference is correct (e.g., "Genesis 1:1")
+   - Try a different text to test Sefaria API
 
-## Benchmarking
+4. **Challenging terms not appearing**:
+   - Terms are extracted asynchronously (may take 2-5 seconds)
+   - Check if extraction completed (button will show count)
+   - Cached terms load instantly on subsequent visits
 
-Run the Phase 7 benchmark suite to compare performance:
+5. **Import errors**:
+   - Ensure virtual environment is activated
+   - Reinstall dependencies: `pip install -r requirements.txt`
 
-```bash
-python benchmark_phase7.py
-```
+## Design Philosophy
 
-This will test both faster-whisper and openai-whisper performance and save results to `bench/phase7_results_*.json`.
+**Stateless & Simple:**
+- No session persistence - just Q&A
+- Fast startup, minimal overhead
+- Focus on the current study session
+
+**Text-First:**
+- You read from your physical book
+- App provides AI context and Q&A
+- No text display clutter
+
+**Speed Matters:**
+- Optimized for quick question-answering
+- Cached challenging terms for instant access
+- Minimal UI, maximum functionality
 
 ## License
 
