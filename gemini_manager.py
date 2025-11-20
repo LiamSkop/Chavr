@@ -6,6 +6,7 @@ Free tier: 10,000 requests/minute, 10M tokens/minute.
 """
 
 import os
+from pathlib import Path
 import google.generativeai as genai
 from typing import Dict, List, Optional, Callable, Any
 import json
@@ -15,9 +16,61 @@ from datetime import datetime
 # Load environment variables from .env file
 try:
     from dotenv import load_dotenv
-    load_dotenv()
 except ImportError:
-    pass  # python-dotenv not installed, use system environment variables
+    load_dotenv = None  # python-dotenv not installed, use system environment variables
+
+
+def _find_repo_root(start_path: Path) -> Optional[Path]:
+    """Locate the real repository root, handling git worktrees."""
+    for current in [start_path] + list(start_path.parents):
+        git_path = current / '.git'
+        if git_path.is_dir():
+            return current
+        if git_path.is_file():
+            try:
+                gitdir_line = git_path.read_text().strip()
+                if gitdir_line.startswith('gitdir:'):
+                    gitdir_target = gitdir_line.split(':', 1)[1].strip()
+                    gitdir_path = (git_path.parent / gitdir_target).resolve()
+                    repo_root = gitdir_path.parent.parent  # .../.git/worktrees/<name> -> repo/.git
+                    if repo_root.name == '.git':
+                        return repo_root.parent
+            except OSError:
+                continue
+    return None
+
+
+def _ensure_env_loaded():
+    """Attempt to load .env files from likely locations until GEMINI_API_KEY is found."""
+    if not load_dotenv:
+        return
+
+    if os.getenv('GEMINI_API_KEY'):
+        return
+
+    # 1. Default location (current working directory)
+    load_dotenv()
+    if os.getenv('GEMINI_API_KEY'):
+        return
+
+    # 2. Repository root (.env)
+    repo_root = _find_repo_root(Path(__file__).resolve())
+    if repo_root:
+        env_path = repo_root / '.env'
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path, override=False)
+            if os.getenv('GEMINI_API_KEY'):
+                return
+
+    # 3. Custom path via environment variable (optional override)
+    custom_env = os.getenv('CHAVR_ENV_PATH')
+    if custom_env:
+        env_file = Path(custom_env).expanduser()
+        if env_file.exists():
+            load_dotenv(dotenv_path=env_file, override=False)
+
+
+_ensure_env_loaded()
 
 
 class GeminiManager:

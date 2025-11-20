@@ -155,6 +155,9 @@ class TutorApp:
                 # Extract text content
                 text_content = self.sefaria_manager.extract_text_content(data)
                 
+                # Extract structured content (for Chayei Adam Klal/Siman)
+                structured_content = self.sefaria_manager.extract_structured_content(data)
+                
                 # Check for cached challenging terms
                 challenging_terms = self._load_cached_terms(reference, language)
                 
@@ -164,7 +167,10 @@ class TutorApp:
                     'content': text_content,
                     'language': language,
                     'challenging_terms': challenging_terms,
-                    'loaded_at': datetime.now().isoformat()
+                    'loaded_at': datetime.now().isoformat(),
+                    'structured_content': structured_content,
+                    'klal_number': structured_content.get('klal') if structured_content else None,
+                    'siman_count': structured_content.get('siman_count') if structured_content else None
                 }
                 
                 # Update AI context
@@ -185,6 +191,45 @@ class TutorApp:
         except Exception as e:
             print(f"✗ Error loading text: {e}")
             return False
+    
+    def get_structured_content(self) -> Optional[Dict[str, Any]]:
+        """
+        Get Klal/Siman structured content for current text.
+        
+        Returns:
+            Structured content dict or None
+        """
+        if self.current_text:
+            return self.current_text.get('structured_content')
+        return None
+    
+    def get_siman_by_number(self, siman_num: int) -> Optional[Dict[str, Any]]:
+        """
+        Get specific Siman by number.
+        
+        Args:
+            siman_num: Siman number
+            
+        Returns:
+            Siman dict or None if not found
+        """
+        structured = self.get_structured_content()
+        if structured and structured.get('simanim'):
+            for siman in structured['simanim']:
+                if siman.get('siman') == siman_num:
+                    return siman
+        return None
+    
+    def get_current_klal(self) -> Optional[int]:
+        """
+        Get current Klal number.
+        
+        Returns:
+            Klal number or None
+        """
+        if self.current_text:
+            return self.current_text.get('klal_number')
+        return None
     
     def get_current_text_content(self) -> Optional[str]:
         """Get the current Sefaria text content."""
