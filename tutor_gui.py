@@ -286,22 +286,32 @@ class TutorGUI:
                         import json
                         data = json.loads(post_data.decode('utf-8'))
                         phrase = data.get('phrase', '')
+                        siman = data.get('siman')
+                        klal = data.get('klal')
                         
-                        # Call the GUI method to ask about selection
-                        # Use root.after to ensure it runs on main thread
-                        if phrase:
-                            gui_instance.root.after(0, lambda: gui_instance._ask_about_selection(phrase))
+                        if not phrase:
+                            raise ValueError("Missing phrase")
                         
-                        # Send success response
+                        response_text = gui_instance._generate_selection_response(phrase, siman, klal)
+                        
                         self.send_response(200)
                         self.send_header('Content-Type', 'application/json')
                         self.send_header('Access-Control-Allow-Origin', '*')
                         self.end_headers()
-                        self.wfile.write(json.dumps({'status': 'ok'}).encode())
+                        self.wfile.write(json.dumps({
+                            'status': 'ok',
+                            'response': response_text or ''
+                        }).encode())
                     except Exception as e:
                         print(f"Error handling API request: {e}")
                         self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self.send_header('Access-Control-Allow-Origin', '*')
                         self.end_headers()
+                        self.wfile.write(json.dumps({
+                            'status': 'error',
+                            'message': str(e)
+                        }).encode())
                 elif self.path == '/api/text-selected':
                     content_length = int(self.headers['Content-Length'])
                     post_data = self.rfile.read(content_length)
@@ -385,8 +395,8 @@ class TutorGUI:
             import traceback
             traceback.print_exc()
     
-    def _update_text_display(self, text_content, language):
-        """Update the text display."""
+    def _update_text_display(self, text_content, language, structured_content=None):
+        """Update the text display with optional structured content (Klal/Siman)."""
         # Since webview integration is complex, we'll use a file-based approach
         # Write text content to a JSON file that the HTML can read via polling
         try:
@@ -397,7 +407,8 @@ class TutorGUI:
             data = {
                 'text': text_content,
                 'language': language,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'structured': structured_content  # Add structured content
             }
             
             with open(data_file, 'w', encoding='utf-8') as f:
@@ -421,46 +432,50 @@ class TutorGUI:
         self.selected_phrase = selected_text
         # Note: Button is handled in webview, but we store the selection
     
-    def _ask_about_selection(self, phrase=None):
-        """Ask about the selected phrase."""
+    def _generate_selection_response(self, phrase, siman=None, klal=None):
+        """Generate AI response for a selected phrase synchronously."""
+        if not phrase:
+            raise ValueError("No phrase provided")
+        
+        if not self.current_reference:
+            raise ValueError("Please select a text to study first")
+        
+        question = self._build_selection_question(phrase, siman, klal)
+        response = self.app.ask_question(question)
+        return response or ""
+    
+    def _build_selection_question(self, phrase, siman=None, klal=None):
+        """Build the question string for a selected phrase."""
+        cleaned = phrase.strip()
+        if not cleaned:
+            raise ValueError("No phrase provided")
+        
+        try:
+            siman = int(siman) if siman is not None else None
+        except (TypeError, ValueError):
+            siman = None
+        
+        try:
+            klal = int(klal) if klal is not None else None
+        except (TypeError, ValueError):
+            klal = None
+        
+        if siman and klal:
+            return f"What does '{cleaned}' mean in Klal {klal}, Siman {siman}?"
+        if siman:
+            return f"What does '{cleaned}' mean in Siman {siman}?"
+        return f"What does '{cleaned}' mean in this context?"
+    
+    def _ask_about_selection(self, phrase=None, siman=None, klal=None):
+        """Legacy handler for manual selection questions."""
         selected = phrase or self.selected_phrase
         if not selected:
             return
         
-        if not self.current_reference:
-            self._show_error("Please select a text to study first")
-            return
-        
         try:
-            question = f"What does '{selected}' mean in this context?"
-            
-            # Clear selection in webview
-            if self.webview_window:
-                try:
-                    self.webview_window.evaluate_js("window.clearSelection()")
-                except:
-                    pass
-            
-            self.selected_phrase = None
-            
-            # Show user message
-            self._add_message(f"You: {question}", "user")
-            
-            # Get AI response
-            self._add_message("Thinking...", "system")
-            
-            # Call the app's ask_question method
-            response = self.app.ask_question(question)
-            
+            response = self._generate_selection_response(selected, siman, klal)
             if response:
-                # Remove "Thinking..." and add AI response
-                self.chat_display.config(state=tk.NORMAL)
-                self.chat_display.delete("end-2l", "end-1l")
                 self._add_message(f"AI Tutor: {response}", "ai")
-                self.chat_display.config(state=tk.DISABLED)
-            else:
-                self._add_message("No response from AI tutor.", "error")
-                
         except Exception as e:
             self._show_error(f"Error asking about selection: {str(e)}")
     
@@ -744,8 +759,9 @@ class TutorGUI:
             
             # Update text display panel (webview)
             text_content = self.app.get_current_text_content()
+            structured_content = self.app.get_structured_content()
             if text_content:
-                self._update_text_display(text_content, language)
+                self._update_text_display(text_content, language, structured_content)
             else:
                 self._update_text_display("Text content not available...", language)
             

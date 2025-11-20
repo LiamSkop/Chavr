@@ -7,9 +7,18 @@
     <link rel="stylesheet" href="text_display.css">
 </head>
 <body>
+    <div id="speech-bubble-root"></div>
     <div class="container">
         <div class="button-bar">
-            <button id="ask-btn" class="ask-button" disabled>What does this mean?</button>
+            <div class="siman-navigation" id="siman-navigation" style="display: none;">
+                <button id="prev-siman" class="siman-nav-btn" disabled>◀ Prev Siman</button>
+                <span id="siman-counter" class="siman-counter">Siman 1 of 1</span>
+                <button id="next-siman" class="siman-nav-btn" disabled>Next Siman ▶</button>
+                <div class="jump-to-siman">
+                    <input type="number" id="jump-siman-input" class="jump-input" placeholder="Go to Siman" min="1">
+                    <button id="jump-siman-btn" class="jump-btn">Go</button>
+                </div>
+            </div>
             <div class="scroll-controls">
                 <button id="scroll-up" class="scroll-btn">▲</button>
                 <button id="scroll-down" class="scroll-btn">▼</button>
