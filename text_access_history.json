@@ -11,11 +11,56 @@
     {
       "text": "Pirkei Avot 1",
       "timestamp": "2025-10-29T23:13:25.146025"
+    },
+    {
+      "text": "Chayei Adam 1",
+      "timestamp": "2025-11-08T23:53:32.714561"
+    },
+    {
+      "text": "Chayei Adam 2",
+      "timestamp": "2025-11-08T23:53:32.970954"
+    },
+    {
+      "text": "Chayei Adam 13:2",
+      "timestamp": "2025-11-08T23:55:54.374739"
+    },
+    {
+      "text": "Chayei Adam 13:3",
+      "timestamp": "2025-11-08T23:55:56.184362"
+    },
+    {
+      "text": "Chayei Adam 13:4",
+      "timestamp": "2025-11-08T23:55:57.175940"
+    },
+    {
+      "text": "Chayei Adam 13:5",
+      "timestamp": "2025-11-08T23:55:57.986665"
+    },
+    {
+      "text": "Chayei Adam 13:6",
+      "timestamp": "2025-11-08T23:55:58.704067"
+    },
+    {
+      "text": "Exodus 12",
+      "timestamp": "2025-11-16T14:31:56.836256"
+    },
+    {
+      "text": "Chayei Adam 14",
+      "timestamp": "2025-11-19T18:17:10.734993"
     }
   ],
   "popularity": {
     "Chayei Adam 13": 1,
     "Genesis 2": 1,
-    "Pirkei Avot 1": 1
+    "Pirkei Avot 1": 1,
+    "Chayei Adam 1": 1,
+    "Chayei Adam 2": 1,
+    "Chayei Adam 13:2": 1,
+    "Chayei Adam 13:3": 1,
+    "Chayei Adam 13:4": 1,
+    "Chayei Adam 13:5": 1,
+    "Chayei Adam 13:6": 1,
+    "Exodus 12": 1,
+    "Chayei Adam 14": 1
   }
 }

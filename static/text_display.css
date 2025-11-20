@@ -26,6 +26,8 @@ body {
     padding: 15px 20px;
     background-color: #FFFFFF;
     border-bottom: 1px solid #E5E7EB;
+    gap: 15px;
+    flex-wrap: wrap;
 }
 
 .ask-button {
@@ -54,6 +56,85 @@ body {
 .scroll-controls {
     display: flex;
     gap: 4px;
+}
+
+.siman-navigation {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    border-left: 1px solid #E5E7EB;
+    border-right: 1px solid #E5E7EB;
+}
+
+.siman-nav-btn {
+    background-color: #E5E7EB;
+    color: #374151;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.siman-nav-btn:hover:not(:disabled) {
+    background-color: #D1D5DB;
+    transform: translateY(-1px);
+}
+
+.siman-nav-btn:disabled {
+    background-color: #F3F4F6;
+    color: #9CA3AF;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.siman-counter {
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    padding: 0 8px;
+    white-space: nowrap;
+}
+
+.jump-to-siman {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.jump-input {
+    width: 60px;
+    padding: 4px 8px;
+    border: 1px solid #D1D5DB;
+    border-radius: 4px;
+    font-size: 13px;
+    text-align: center;
+}
+
+.jump-input:focus {
+    outline: none;
+    border-color: #3B82F6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.jump-btn {
+    background-color: #3B82F6;
+    color: white;
+    border: none;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.jump-btn:hover {
+    background-color: #2563EB;
+    transform: translateY(-1px);
 }
 
 .scroll-btn {
@@ -138,6 +219,34 @@ body {
 .text-line::-moz-selection {
     background-color: #3B82F6;
     color: white;
+}
+
+.siman-marker {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 2;
+    margin: 30px 0 15px 0;
+    padding: 0 40px;
+    color: #9CA3AF;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    opacity: 0.8;
+    border-bottom: 1px solid rgba(156, 163, 175, 0.3);
+    padding-bottom: 10px;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    transition: all 0.3s ease;
+}
+
+.siman-marker-current {
+    color: #3B82F6;
+    opacity: 1;
+    border-bottom-color: rgba(59, 130, 246, 0.5);
+    border-bottom-width: 2px;
+    font-weight: 700;
 }
 
 .placeholder {

@@ -477,6 +477,7 @@ class SefariaManager:
     def extract_text_content(self, data: Dict[str, Any]) -> str:
         """
         Extract plain text content from Sefaria API response.
+        For Chayei Adam, uses structured extraction to preserve Klal/Siman structure.
         
         Args:
             data: Sefaria API response dictionary
@@ -487,7 +488,16 @@ class SefariaManager:
         if not data:
             return ""
         
-        # Handle different response formats from Sefaria
+        # Check if this is Chayei Adam with Klal/Siman structure
+        if self._detect_chayei_adam_structure(data):
+            # Use structured extraction and flatten for backward compatibility
+            structured = self.extract_structured_content(data)
+            if structured and structured.get('simanim'):
+                # Join Simanim with double newline for separation
+                text_parts = [siman.get('text', '') for siman in structured['simanim']]
+                return "\n\n".join(text_parts)
+        
+        # Fall back to flat extraction for other texts
         text_parts = []
         
         def extract_text_helper(obj):
@@ -520,6 +530,475 @@ class SefariaManager:
         result = re.sub(r'\n{3,}', '\n\n', result)
         
         return result
+    
+    def _detect_chayei_adam_structure(self, data: Dict[str, Any]) -> bool:
+        """
+        Check if text uses Klal/Siman structure (Chayei Adam).
+        
+        Args:
+            data: Sefaria API response dictionary
+            
+        Returns:
+            True if text has Klal/Siman structure
+        """
+        if not data:
+            return False
+        
+        # Check sectionNames for ["Klal", "Siman"]
+        section_names = data.get('sectionNames', [])
+        if section_names == ["Klal", "Siman"]:
+            return True
+        
+        # Check book name
+        book = data.get('book', '')
+        index_title = data.get('indexTitle', '')
+        if 'chayei adam' in book.lower() or 'chayei adam' in index_title.lower():
+            return True
+        
+        # Check if text array structure suggests Simanim
+        text_array = data.get('text', [])
+        he_array = data.get('he', [])
+        if isinstance(text_array, list) and len(text_array) > 0:
+            # If text is a list of strings, likely Simanim
+            if all(isinstance(item, str) for item in text_array):
+                return True
+        if isinstance(he_array, list) and len(he_array) > 0:
+            if all(isinstance(item, str) for item in he_array):
+                return True
+        
+        return False
+    
+    def _parse_siman_numbers(self, text: str, language: str = 'he') -> Optional[int]:
+        """
+        Extract Siman number from text. Looks for markers anywhere in the text.
+        
+        Args:
+            text: Text content that may contain Siman marker
+            language: Language code ('he' or 'en')
+            
+        Returns:
+            Siman number if found, None otherwise
+        """
+        import re
+        
+        if language == 'he':
+            # Hebrew patterns: "סימן ח'", "(סימן ח')", "סי' ח'", "סימן ח':"
+            # More comprehensive patterns to catch markers anywhere in text
+            # Priority: Look for Siman markers at start of paragraph or after "דין"
+            patterns = [
+                # At start of text or after "דין" - most likely to be a Siman marker
+                r'(?:^|דין\s+)[^:]*?סימן\s+([א-ת]+)[\'׳]',  # דין...סימן ח'
+                r'(?:^|דין\s+)[^:]*?\(סימן\s+([א-ת]+)[\'׳]\)',  # דין...(סימן ח')
+                r'(?:^|דין\s+)[^:]*?סי[\'׳]\s*([א-ת]+)[\'׳]',  # דין...סי' ח'
+                # Standard patterns
+                r'סימן\s+([א-ת]+)[\'׳]',  # סימן ח'
+                r'\(סימן\s+([א-ת]+)[\'׳]\)',  # (סימן ח')
+                r'סי[\'׳]\s*([א-ת]+)[\'׳]',  # סי' ח'
+                r'סימן\s*(\d+)',  # סימן 8
+                r'סי[\'׳]\s*(\d+)',  # סי' 8
+                # Also catch without final quote sometimes
+                r'סימן\s+([א-ת]+)(?:\s|:|\)|$)',  # סימן ח (without quote)
+                r'סי[\'׳]\s*([א-ת]+)(?:\s|:|\)|$)',  # סי' ח (without quote)
+            ]
+        else:
+            # English patterns: "Siman 8", "Siman 8:", "§8"
+            patterns = [
+                r'Siman\s+(\d+)',
+                r'§\s*(\d+)',
+                r'siman\s+(\d+)',
+            ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                num_str = match.group(1)
+                # Convert Hebrew letters to numbers if needed
+                if language == 'he' and num_str.isalpha():
+                    siman_num = self._hebrew_to_number(num_str)
+                    if siman_num:
+                        return siman_num
+                elif num_str.isdigit():
+                    return int(num_str)
+        
+        return None
+    
+    def _hebrew_to_number(self, hebrew_str: str) -> Optional[int]:
+        """
+        Convert Hebrew letter representation to number.
+        Handles א-ט (1-9), י-יט (10-19), כ-צט (20-99), etc.
+        
+        Args:
+            hebrew_str: Hebrew letter(s) representing a number
+            
+        Returns:
+            Integer value or None if invalid
+        """
+        # Basic Hebrew letters for 1-9
+        basic = {
+            'א': 1, 'ב': 2, 'ג': 3, 'ד': 4, 'ה': 5,
+            'ו': 6, 'ז': 7, 'ח': 8, 'ט': 9
+        }
+        
+        # 10-19
+        teens = {
+            'י': 10, 'יא': 11, 'יב': 12, 'יג': 13, 'יד': 14,
+            'טו': 15, 'טז': 16, 'יז': 17, 'יח': 18, 'יט': 19
+        }
+        
+        # 20-90 (tens)
+        tens = {
+            'כ': 20, 'ל': 30, 'מ': 40, 'נ': 50,
+            'ס': 60, 'ע': 70, 'פ': 80, 'צ': 90
+        }
+        
+        # Check if it's a basic number (1-9)
+        if hebrew_str in basic:
+            return basic[hebrew_str]
+        
+        # Check if it's a teen (10-19)
+        if hebrew_str in teens:
+            return teens[hebrew_str]
+        
+        # Check if it's a multiple of 10 (20, 30, etc.)
+        if hebrew_str in tens:
+            return tens[hebrew_str]
+        
+        # Try to parse composite numbers (e.g., כא = 21, כב = 22)
+        if len(hebrew_str) >= 2:
+            # Check if starts with a tens digit
+            for ten_letter, ten_value in tens.items():
+                if hebrew_str.startswith(ten_letter):
+                    remainder = hebrew_str[1:]
+                    if remainder in basic:
+                        return ten_value + basic[remainder]
+                    elif remainder in teens:
+                        return ten_value + teens[remainder]
+        
+        # Try common abbreviations (like תפ for תפ"ט = 489, but we'll just return None for complex ones)
+        # For now, return None if we can't parse it
+        return None
+    
+    def _extract_siman_from_paragraph(self, paragraph: str, language: str = 'he') -> Optional[int]:
+        """
+        Extract Siman number from a paragraph. Looks for markers anywhere in the text.
+        
+        Args:
+            paragraph: Paragraph text (may contain HTML)
+            language: Language code
+            
+        Returns:
+            Siman number if found, None otherwise
+        """
+        # Clean HTML first
+        import re
+        clean_text = re.sub(r'<[^>]+>', '', paragraph)
+        
+        # Look for Siman marker
+        return self._parse_siman_numbers(clean_text, language)
+    
+    def _find_siman_header(self, text: str, language: str = 'he') -> Optional[int]:
+        """
+        Find Siman marker that is a HEADER (not a reference).
+        Headers appear at start of paragraph, references appear mid-paragraph.
+        
+        Args:
+            text: Clean paragraph text
+            language: Language code
+            
+        Returns:
+            Siman number if header marker found, None otherwise
+        """
+        import re
+        
+        # Check first 300 characters for header-like patterns
+        header_text = text[:300]
+        
+        if language == 'he':
+            # Negative patterns - if these appear before marker, it's a reference
+            reference_indicators = [
+                r'עיין',
+                r'כדלקמן',
+                r'בסימן',
+                r'לקמן.*?סי',
+            ]
+            
+            # Check first 100 chars for reference indicators
+            for indicator in reference_indicators:
+                if re.search(indicator, header_text[:100]):
+                    # This looks like a reference, not a header
+                    return None
+            
+            # Positive patterns for headers
+            # 1. At very start: "דין...סימן ח':" or "סימן ח':"
+            # 2. After "דין" at start: "דין ברכת...סימן ח'"
+            header_patterns = [
+                r'^דין[^:]*?סימן\s+([א-ת]+)[\'׳]\s*:',  # דין...סימן ח':
+                r'^סימן\s+([א-ת]+)[\'׳]\s*:',  # סימן ח':
+                r'^\(סימן\s+([א-ת]+)[\'׳]\)\s*:',  # (סימן ח'):
+            ]
+            
+            for pattern in header_patterns:
+                match = re.search(pattern, header_text)
+                if match:
+                    num_str = match.group(1)
+                    siman_num = self._hebrew_to_number(num_str)
+                    if siman_num and 1 <= siman_num <= 200:
+                        return siman_num
+        
+        return None
+    
+    def extract_structured_content(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Extract structured content with Klal/Siman information for Chayei Adam.
+        Groups paragraphs by Siman - when a Siman marker is found, it starts a new Siman.
+        All subsequent paragraphs without markers belong to that Siman until the next marker.
+        
+        Args:
+            data: Sefaria API response dictionary
+            
+        Returns:
+            Structured content dict with klal and simanim, or None if not Chayei Adam
+        """
+        if not self._detect_chayei_adam_structure(data):
+            return None
+        
+        # Extract Klal number from sections or reference
+        klal = None
+        sections = data.get('sections', [])
+        if sections:
+            klal = sections[0]
+        else:
+            # Try to extract from reference
+            ref = data.get('ref', '') or data.get('sectionRef', '')
+            import re
+            match = re.search(r'(\d+)', ref)
+            if match:
+                klal = int(match.group(1))
+        
+        # Get text array (prefer 'text', fall back to 'he')
+        text_array = data.get('text', [])
+        if not text_array or not isinstance(text_array, list):
+            text_array = data.get('he', [])
+        
+        if not text_array or not isinstance(text_array, list):
+            return None
+        
+        # Determine language
+        language = 'he' if data.get('he') else 'en'
+        
+        # First pass: Find all Siman markers and their positions
+        siman_markers = []  # List of (index, siman_num) tuples
+        for idx, paragraph in enumerate(text_array):
+            if not isinstance(paragraph, str):
+                continue
+            
+            import re
+            clean_text = re.sub(r'<[^>]+>', '', paragraph).strip()
+            if not clean_text:
+                continue
+            
+            siman_num = self._find_siman_header(clean_text, language)
+            if siman_num:
+                siman_markers.append((idx, siman_num))
+        
+        # Group paragraphs by Siman
+        simanim = []
+        current_siman = None
+        current_paragraphs = []
+        current_pos = 0
+        
+        # If no markers found, treat each paragraph as a separate Siman (sequential)
+        if not siman_markers:
+            # No Siman markers - use sequential numbering
+            for idx, paragraph in enumerate(text_array):
+                if not isinstance(paragraph, str):
+                    continue
+                
+                import re
+                clean_text = re.sub(r'<[^>]+>', '', paragraph).strip()
+                if not clean_text:
+                    continue
+                
+                simanim.append({
+                    'siman': idx + 1,
+                    'text': clean_text,
+                    'start_pos': current_pos,
+                    'end_pos': current_pos + len(clean_text),
+                    'has_number': False,
+                    'index': idx
+                })
+                current_pos += len(clean_text) + 2
+        else:
+            # We have markers - group paragraphs accordingly
+            marker_idx = 0  # Index into siman_markers list
+            
+            for idx, paragraph in enumerate(text_array):
+                if not isinstance(paragraph, str):
+                    continue
+                
+                import re
+                clean_text = re.sub(r'<[^>]+>', '', paragraph).strip()
+                if not clean_text:
+                    continue
+                
+                # Check if this is a marker position
+                if marker_idx < len(siman_markers) and siman_markers[marker_idx][0] == idx:
+                    # Found a Siman marker - start a new Siman
+                    # First, save the previous Siman if it exists
+                    if current_siman is not None:
+                        combined_text = ' '.join(current_paragraphs)
+                        start_pos = current_pos - len(combined_text) - (len(current_paragraphs) - 1) * 2
+                        end_pos = current_pos - 2
+                        
+                        simanim.append({
+                            'siman': current_siman,
+                            'text': combined_text,
+                            'start_pos': start_pos,
+                            'end_pos': end_pos,
+                            'has_number': True,
+                            'index': len(simanim)
+                        })
+                    
+                    # Start new Siman
+                    current_siman = siman_markers[marker_idx][1]
+                    current_paragraphs = [clean_text]
+                    current_pos += len(clean_text) + 2
+                    marker_idx += 1
+                else:
+                    # No marker found - this paragraph belongs to current Siman
+                    if current_siman is not None:
+                        # Add to current Siman
+                        current_paragraphs.append(clean_text)
+                        current_pos += len(clean_text) + 2
+                    else:
+                        # First paragraph without marker - start with Siman 1
+                        current_siman = 1
+                        current_paragraphs = [clean_text]
+                        current_pos += len(clean_text) + 2
+            
+            # Don't forget the last Siman
+            if current_siman is not None and current_paragraphs:
+                combined_text = ' '.join(current_paragraphs)
+                start_pos = current_pos - len(combined_text) - (len(current_paragraphs) - 1) * 2
+                end_pos = current_pos - 2
+                
+                simanim.append({
+                    'siman': current_siman,
+                    'text': combined_text,
+                    'start_pos': start_pos,
+                    'end_pos': end_pos,
+                    'has_number': True,
+                    'index': len(simanim)
+                })
+        
+        if not simanim:
+            return None
+        
+        # Fill gaps by fetching missing Simanim individually
+        simanim = self._fill_siman_gaps(klal, simanim, language)
+        
+        # Sort by Siman number to ensure correct order
+        simanim.sort(key=lambda x: x.get('siman', 0))
+        
+        return {
+            'klal': klal,
+            'simanim': simanim,
+            'siman_count': len(simanim)
+        }
+    
+    def _fill_siman_gaps(self, klal: int, simanim: List[Dict[str, Any]], language: str) -> List[Dict[str, Any]]:
+        """
+        Fill gaps in Simanim by fetching missing ones individually from Sefaria API.
+        Uses direct API calls to avoid recursion issues.
+        Only runs when we have confirmed headers (not sequential fallback).
+        
+        Args:
+            klal: Klal number
+            simanim: List of Simanim already found
+            language: Language code
+            
+        Returns:
+            Updated list of Simanim with gaps filled
+        """
+        if not simanim or klal is None:
+            return simanim
+        
+        # If most Simanim don't have numbers (has_number=False), skip gap-filling
+        # This means we're in sequential mode, not header-detection mode
+        has_numbers_count = sum(1 for s in simanim if s.get('has_number', False))
+        if has_numbers_count < len(simanim) * 0.5:  # Less than 50% have numbers
+            return simanim  # Sequential mode - don't fill gaps
+        
+        # Get all Siman numbers found
+        siman_nums = [s.get('siman') for s in simanim if s.get('siman')]
+        if not siman_nums:
+            return simanim
+        
+        # Find gaps
+        sorted_nums = sorted(set(siman_nums))
+        min_siman = min(sorted_nums)
+        max_siman = max(sorted_nums)
+        
+        # Check for gaps
+        expected_range = list(range(min_siman, max_siman + 1))
+        missing_nums = [n for n in expected_range if n not in sorted_nums]
+        
+        if not missing_nums:
+            # No gaps - return as is
+            return simanim
+        
+        # Try to fetch missing Simanim using direct API call to avoid recursion
+        filled_simanim = list(simanim)  # Copy existing
+        
+        for siman_num in missing_nums:
+            try:
+                # Direct API call - bypass fetch_text to avoid recursion
+                import requests
+                ref = f"Chayei Adam {klal}:{siman_num}"
+                url = f"https://www.sefaria.org/api/texts/{ref}"
+                params = {'lang': language}
+                
+                response = requests.get(url, params=params, timeout=10)
+                if response.status_code == 200:
+                    siman_data = response.json()
+                    
+                    # Extract text content directly (bypass structured content extraction)
+                    text_array = siman_data.get('text', [])
+                    if not text_array or not isinstance(text_array, list):
+                        text_array = siman_data.get('he', []) if language == 'he' else siman_data.get('en', [])
+                    
+                    if text_array and isinstance(text_array, list):
+                        # Combine all paragraphs into single text
+                        import re
+                        text_parts = []
+                        for para in text_array:
+                            if isinstance(para, str):
+                                clean_text = re.sub(r'<[^>]+>', '', para).strip()
+                                if clean_text:
+                                    text_parts.append(clean_text)
+                        
+                        text_content = ' '.join(text_parts)
+                        
+                        if text_content:
+                            # Create Siman entry
+                            filled_simanim.append({
+                                'siman': siman_num,
+                                'text': text_content,
+                                'start_pos': 0,  # Will be recalculated if needed
+                                'end_pos': len(text_content),
+                                'has_number': False,  # Fetched individually, no marker in Klal
+                                'index': len(filled_simanim),
+                                'fetched_individually': True  # Flag to indicate this was fetched separately
+                            })
+                            print(f"  ✓ Fetched missing Siman {siman_num} for Klal {klal}")
+            except Exception as e:
+                # If fetch fails, skip this Siman (might not exist)
+                # Only print if it's not a recursion error
+                if "recursion" not in str(e).lower():
+                    print(f"  ⚠ Could not fetch Siman {siman_num} for Klal {klal}: {e}")
+                continue
+        
+        return filled_simanim
     
     def search_text_names(self, query: str, limit: int = 10) -> list:
         """

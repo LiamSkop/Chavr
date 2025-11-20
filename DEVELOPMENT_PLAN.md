@@ -255,7 +255,7 @@ class SefariaManager:
 - [x] Add comprehensive error handling (API failures, rate limits, quota)
 - [x] Test with Hebrew and English text contexts
 - [x] Create test suite (test_gemini.py) with 6 comprehensive tests
-- [x] Update documentation (README.md) with Phase 9 features
+- [x] Update documentation (README.md)python with Phase 9 features
 - [x] Add .env configuration for API key management
 
 **Completed Implementation:**

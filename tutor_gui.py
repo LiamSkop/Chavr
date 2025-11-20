@@ -286,11 +286,13 @@ class TutorGUI:
                         import json
                         data = json.loads(post_data.decode('utf-8'))
                         phrase = data.get('phrase', '')
+                        siman = data.get('siman')
+                        klal = data.get('klal')
                         
                         # Call the GUI method to ask about selection
                         # Use root.after to ensure it runs on main thread
                         if phrase:
-                            gui_instance.root.after(0, lambda: gui_instance._ask_about_selection(phrase))
+                            gui_instance.root.after(0, lambda: gui_instance._ask_about_selection(phrase, siman, klal))
                         
                         # Send success response
                         self.send_response(200)
@@ -385,8 +387,8 @@ class TutorGUI:
             import traceback
             traceback.print_exc()
     
-    def _update_text_display(self, text_content, language):
-        """Update the text display."""
+    def _update_text_display(self, text_content, language, structured_content=None):
+        """Update the text display with optional structured content (Klal/Siman)."""
         # Since webview integration is complex, we'll use a file-based approach
         # Write text content to a JSON file that the HTML can read via polling
         try:
@@ -397,7 +399,8 @@ class TutorGUI:
             data = {
                 'text': text_content,
                 'language': language,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'structured': structured_content  # Add structured content
             }
             
             with open(data_file, 'w', encoding='utf-8') as f:
@@ -421,8 +424,8 @@ class TutorGUI:
         self.selected_phrase = selected_text
         # Note: Button is handled in webview, but we store the selection
     
-    def _ask_about_selection(self, phrase=None):
-        """Ask about the selected phrase."""
+    def _ask_about_selection(self, phrase=None, siman=None, klal=None):
+        """Ask about the selected phrase, optionally including Siman/Klal reference."""
         selected = phrase or self.selected_phrase
         if not selected:
             return
@@ -432,7 +435,13 @@ class TutorGUI:
             return
         
         try:
-            question = f"What does '{selected}' mean in this context?"
+            # Build question with Siman/Klal reference if available
+            if siman and klal:
+                question = f"What does '{selected}' mean in Klal {klal}, Siman {siman}?"
+            elif siman:
+                question = f"What does '{selected}' mean in Siman {siman}?"
+            else:
+                question = f"What does '{selected}' mean in this context?"
             
             # Clear selection in webview
             if self.webview_window:
@@ -744,8 +753,9 @@ class TutorGUI:
             
             # Update text display panel (webview)
             text_content = self.app.get_current_text_content()
+            structured_content = self.app.get_structured_content()
             if text_content:
-                self._update_text_display(text_content, language)
+                self._update_text_display(text_content, language, structured_content)
             else:
                 self._update_text_display("Text content not available...", language)
             
